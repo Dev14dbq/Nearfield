@@ -650,12 +650,15 @@ img.wave-ico { border-radius: 12px; }
 .set-h:first-child { margin-top: 4px; }
 .switch-row.first { border-top: 0; margin-top: 0; padding-top: 2px; }
 .eq-presets { margin: 14px 0 6px; }
-.eq { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; padding-top: 10px; }
-.eq label { display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.eq output { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; height: 14px; }
-.eq span { font-size: 11px; color: var(--muted); }
-.eq input[type="range"] { writing-mode: vertical-lr; direction: rtl; width: 4px; height: 130px; flex: none; background: linear-gradient(0deg, var(--ink-2) 50%, rgba(255,255,255,.18) 50%); }
-.eq input[type="range"]::-webkit-slider-thumb { opacity: 1; width: 14px; height: 14px; }
+.eq-bands { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; padding-top: 10px; }
+.eq-bands label { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.eq-bands output { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; height: 14px; }
+.eq-bands span { font-size: 11px; color: var(--muted); }
+.eq-slot { position: relative; width: 28px; height: 140px; }
+.eq-slot input[type="range"] { position: absolute; left: 50%; top: 50%; width: 140px; height: 4px; margin: 0; transform: translate(-50%, -50%) rotate(-90deg); }
+.eq-slot input[type="range"]:hover { filter: brightness(1.15); }
+.eq-slot input[type="range"]::-webkit-slider-thumb { opacity: 1; width: 14px; height: 14px; }
+.eq-slot::before { content: ""; position: absolute; left: 4px; right: 4px; top: 50%; height: 1px; background: rgba(255,255,255,.12); }
 .card-head .switch { margin-left: auto; }
 
 @media (max-width: 1100px) {
@@ -668,3 +671,9 @@ img.wave-ico { border-radius: 12px; }
   .pb-right .pb-status { display: none; }
   .wave-hero { flex-direction: column; align-items: flex-start; }
 }
+
+/* lyrics: centred, the sung line clearly larger */
+.lyrics { text-align: center; padding-left: 32px; padding-right: 32px; }
+.lyrics p { font-size: 24px; transform: none !important; transition: color .35s, font-size .35s cubic-bezier(.2,.8,.2,1), filter .35s, padding .35s; }
+.lyrics p.now { font-size: 34px; line-height: 1.22; padding: 14px 0; }
+.lyrics-plain, .lyrics-src { text-align: center; }

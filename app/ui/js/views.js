@@ -370,7 +370,7 @@ async function settings({ focus } = {}) {
     <section class="card" id="eqCard">
       <div class="card-head"><div><b>Эквалайзер</b></div><button class="switch ${player.eq.some((g) => g) ? "on" : ""}" id="eqOn" aria-label="Эквалайзер"></button></div>
       <div class="chips eq-presets">${EQ_PRESETS.map((p) => `<button class="chip" data-eq="${p.id}">${p.label}</button>`).join("")}</div>
-      <div class="eq">${USER_EQ_BANDS.map((f, i) => `<label><output>${fmtDb(player.eq[i])}</output><input type="range" min="-12" max="12" step="0.5" value="${player.eq[i]}" data-band="${i}" orient="vertical" /><span>${f >= 1000 ? `${f / 1000}k` : f}</span></label>`).join("")}</div>
+      <div class="eq-bands">${USER_EQ_BANDS.map((f, i) => `<label><output>${fmtDb(player.eq[i])}</output><div class="eq-slot"><input type="range" min="-12" max="12" step="0.5" value="${player.eq[i]}" data-band="${i}" /></div><span>${f >= 1000 ? `${f / 1000}k` : f}</span></label>`).join("")}</div>
     </section>
 
     <h2 class="set-h">Сервисы</h2>
@@ -413,12 +413,19 @@ async function settings({ focus } = {}) {
   if (focus === "eq") $("#eqCard").scrollIntoView({ block: "center" });
 }
 
+// Fill grows from the 0 dB centre line up or down.
+function paintEq(input) {
+  const v = Number(input.value); const mid = 50; const at = 50 + (v / 12) * 50;
+  const [a, b] = at >= mid ? [mid, at] : [at, mid];
+  input.style.background = `linear-gradient(90deg, rgba(255,255,255,.16) ${a}%, var(--accent) ${a}%, var(--accent) ${b}%, rgba(255,255,255,.16) ${b}%)`;
+}
+
 const fmtDb = (g) => (g > 0 ? `+${g}` : `${g}`);
 
 function wireEq() {
-  const inputs = $$(".eq input", view);
+  const inputs = $$(".eq-bands input", view);
   const sync = () => {
-    inputs.forEach((input, i) => { input.value = player.eq[i]; input.previousElementSibling.textContent = fmtDb(player.eq[i]); });
+    inputs.forEach((input, i) => { input.value = player.eq[i]; input.closest("label").querySelector("output").textContent = fmtDb(player.eq[i]); paintEq(input); });
     $("#eqOn").classList.toggle("on", player.eq.some((g) => g));
     $$("[data-eq]", view).forEach((b) => b.classList.toggle("active", EQ_PRESETS.find((p) => p.id === b.dataset.eq).gains.every((g, i) => g === player.eq[i])));
   };
