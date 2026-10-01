@@ -877,3 +877,9 @@ body.np-open .np-close { opacity: 1; }
 .np-art canvas { opacity: .32; }
 .np-hover .np-round { background: rgba(0,0,0,.5); }
 .np-hover .np-round:hover { background: rgba(0,0,0,.72); }
+
+@media (max-width: 720px) {
+  .np-right { background: var(--np-color) !important; }
+  .np-drawer { z-index: 7; background: rgba(16, 17, 20, .97); }
+  .np-body.drawer-open .np-right { opacity: 0; pointer-events: none; }
+}
