@@ -340,3 +340,47 @@ pub async fn liked_tracks(http: &reqwest::Client, token: &str) -> Result<Vec<Tra
     }
     Ok(out)
 }
+
+/// "My Wave" and activity stations: Yandex's own recommendations from the user's listening.
+/// `settings` (moodEnergy, diversity, language) apply to the personal wave only.
+pub async fn wave(http: &reqwest::Client, token: &str, station: &str, settings: Option<&Value>, after: Option<&str>) -> Result<(Vec<Track>, String)> {
+    if let Some(settings) = settings {
+        http.post(format!("{API}/rotor/station/{station}/settings3"))
+            .header("X-Yandex-Music-Client", CLIENT)
+            .header("Authorization", format!("OAuth {token}"))
+            .json(settings)
+            .send()
+            .await?
+            .error_for_status()?;
+    }
+    let mut query = vec![("settings2", "true".to_string())];
+    if let Some(after) = after {
+        query.push(("queue", track_id(after).to_string()));
+    }
+    let result = get(http, Some(token), &format!("/rotor/station/{station}/tracks"), &query).await?;
+    let batch = result.get("batchId").and_then(Value::as_str).unwrap_or("").to_string();
+    let tracks = result
+        .get("sequence")
+        .and_then(Value::as_array)
+        .map(|list| list.iter().filter_map(|x| x.get("track")).filter_map(|t| parse_track(t, true)).collect())
+        .unwrap_or_default();
+    Ok((tracks, batch))
+}
+
+/// Tells the wave what happened, so the next tracks fit better (skips teach it the most).
+pub async fn wave_feedback(http: &reqwest::Client, token: &str, station: &str, batch: &str, kind: &str, track: Option<&str>, played: f64) -> Result<()> {
+    let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs_f64();
+    let mut body = serde_json::json!({ "type": kind, "timestamp": ts, "from": "desktop-wave" });
+    if let Some(track) = track {
+        body["trackId"] = Value::String(track.to_string());
+        body["totalPlayedSeconds"] = serde_json::json!(played);
+    }
+    http.post(format!("{API}/rotor/station/{station}/feedback"))
+        .query(&[("batch-id", batch)])
+        .header("X-Yandex-Music-Client", CLIENT)
+        .header("Authorization", format!("OAuth {token}"))
+        .json(&body)
+        .send()
+        .await?;
+    Ok(())
+}

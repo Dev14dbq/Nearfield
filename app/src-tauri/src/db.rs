@@ -157,6 +157,12 @@ impl Db {
         Ok(())
     }
 
+    /// Imported likes keep their order: each gets its own timestamp step.
+    pub fn favorite_at(&self, id: &str, at: i64) -> Result<()> {
+        self.conn.execute("UPDATE tracks SET favorite = 1, fav_at = ?2 WHERE id = ?1", params![id, at])?;
+        Ok(())
+    }
+
     pub fn favorites(&self) -> Result<Vec<LibraryTrack>> {
         self.query(&format!("SELECT {TRACK_COLUMNS} FROM tracks WHERE favorite = 1 ORDER BY fav_at DESC"), [])
     }

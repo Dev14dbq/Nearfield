@@ -250,23 +250,40 @@ async fn accounts(state: State<'_, AppState>) -> Res<Value> {
 
 /// Pulls the user's Yandex likes into the favourites; they then download and prepare as usual.
 #[tauri::command]
-async fn import_yandex_likes(app: AppHandle, state: State<'_, AppState>) -> Res<usize> {
+async fn import_yandex_likes(app: AppHandle, state: State<'_, AppState>) -> Res<Value> {
     let token = state.accounts().yandex_token.ok_or("сначала войди в Яндекс Музыку")?;
     let tracks = providers::yandex::liked_tracks(&state.http, &token).await.map_err(err)?;
-    let count = tracks.len();
-    with_db(&state, |db| {
+    let total = tracks.len();
+    let added = with_db(&state, |db| {
+        let mut added = 0;
+        let start = db::now() - tracks.len() as i64;
         // Oldest first, so the newest like ends up on top of the favourites list.
-        for track in tracks.iter().rev() {
+        for (i, track) in tracks.iter().rev().enumerate() {
+            let known = db.get(&track.id)?.is_some_and(|t| t.favorite);
             db.upsert(track)?;
-            if db.get(&track.id)?.is_some_and(|t| !t.favorite) {
-                db.set_favorite(&track.id, true)?;
+            if !known {
+                db.favorite_at(&track.id, start + i as i64)?;
+                added += 1;
             }
         }
-        Ok(())
+        Ok(added)
     })?;
     state.notify.notify_one();
-    let _ = app.emit("library-imported", count);
-    Ok(count)
+    let _ = app.emit("library-imported", added);
+    Ok(json!({ "added": added, "total": total }))
+}
+
+#[tauri::command]
+async fn wave(state: State<'_, AppState>, station: String, settings: Option<Value>, after: Option<String>) -> Res<Value> {
+    let token = state.accounts().yandex_token.ok_or("нужен вход в Яндекс Музыку")?;
+    let (tracks, batch) = providers::yandex::wave(&state.http, &token, &station, settings.as_ref(), after.as_deref()).await.map_err(err)?;
+    Ok(json!({ "tracks": tracks, "batch": batch }))
+}
+
+#[tauri::command]
+async fn wave_feedback(state: State<'_, AppState>, station: String, batch: String, kind: String, track: Option<String>, played: f64) -> Res<()> {
+    let Some(token) = state.accounts().yandex_token else { return Ok(()) };
+    providers::yandex::wave_feedback(&state.http, &token, &station, &batch, &kind, track.as_deref(), played).await.map_err(err)
 }
 
 /// Opens Yandex's own sign-in page; the token comes back in the redirect and never passes through us otherwise.
@@ -398,6 +415,8 @@ pub fn run() {
             accounts,
             yandex_login,
             import_yandex_likes,
+            wave,
+            wave_feedback,
             yandex_logout,
             spotify_keys,
             pref_get,

@@ -1,30 +1,30 @@
 import { api, listen } from "./api.js";
-import { drawFrame, nowPlaying, openQueueTab, paintRange } from "./nowplaying.js";
+import { drawFrame, nowPlaying, openQueue, openSound, paintRange, syncVolume } from "./nowplaying.js";
 import { analyzeInBackground, player } from "./player.js";
 import { library, refreshPlaylists, toggleFavorite } from "./tracks.js";
-import { $, $$, artistNames, fmtTime, toast } from "./ui.js";
+import { $, $$, artistNames, fmtTime, plural, toast } from "./ui.js";
 import { currentView, goBack, navigate, renderSidePlaylists } from "./views.js";
+import "./wave.js";
 
 const els = {
   play: $("#playBtn"), prev: $("#prevBtn"), next: $("#nextBtn"), shuffle: $("#shuffleBtn"), repeat: $("#repeatBtn"),
   seek: $("#seek"), cur: $("#curTime"), dur: $("#durTime"), title: $("#pbTitle"), artist: $("#pbArtist"),
   coverImg: $("#pbCoverImg"), heart: $("#pbHeart"), status: $("#pbStatus"), volume: $("#volume"),
-  d3: $("#pb3d"), slowed: $("#pbSlowed"), reverb: $("#pbReverb"), bar: $("#playerbar"),
+  d3: $("#pb3d"), sound: $("#pbSound"),
 };
 nowPlaying.setNavigator(navigate);
 
-/* ───── player bar ───── */
+/* ───── player bar (hidden until something is loaded, and while the full player is open) ───── */
 
 function renderBar() {
   const track = player.track;
-  els.bar.classList.toggle("idle", !track);
-  if (track) {
-    els.title.textContent = track.title;
-    els.artist.textContent = artistNames(track);
-    els.coverImg.src = track.cover || "";
-    els.coverImg.hidden = !track.cover;
-    els.heart.classList.toggle("on", Boolean(library.get(track.id)?.favorite));
-  }
+  document.body.classList.toggle("no-track", !track);
+  if (!track) return;
+  els.title.textContent = track.title;
+  els.artist.textContent = artistNames(track);
+  els.coverImg.src = track.cover || "";
+  els.coverImg.hidden = !track.cover;
+  els.heart.classList.toggle("on", Boolean(library.get(track.id)?.favorite));
   renderState();
 }
 
@@ -36,10 +36,13 @@ function renderState() {
   els.repeat.classList.toggle("one", player.repeat === "one");
   const s = player.settings;
   els.d3.classList.toggle("on", s.spatial);
-  els.slowed.classList.toggle("on", s.rate < 1);
-  els.reverb.classList.toggle("on", s.fxReverb);
-  $$(".trow").forEach((row) => row.classList.toggle("playing", row.dataset.id === player.track?.id));
-  $$(".trow.playing").forEach((row) => row.classList.toggle("paused", !player.playing));
+  els.sound.classList.toggle("on", s.rate !== 1 || s.fxReverb || s.ambience !== "none");
+  els.sound.textContent = s.rate < 1 ? "Slowed" : s.rate > 1 ? "Speed up" : s.fxReverb ? "Reverb" : "Звук";
+  $$(".trow").forEach((row) => {
+    const now = row.dataset.id === player.track?.id;
+    row.classList.toggle("playing", now);
+    row.classList.toggle("paused", now && !player.playing);
+  });
 }
 
 player.on("track", renderBar);
@@ -47,10 +50,11 @@ player.on("state", renderState);
 player.on("loading", renderState);
 player.on("settings", renderState);
 player.on("queue", renderState);
-player.on("status", ({ text }) => { els.status.textContent = text ? text.toLowerCase() : ""; });
-player.on("error", ({ message }) => toast(`Не удалось включить: ${message}`, { error: true }));
-player.on("needsGesture", () => toast("Нажми ▶, чтобы продолжить"));
+player.on("status", ({ text, busy }) => { els.status.textContent = busy && text ? text.toLowerCase() : ""; });
+player.on("error", ({ message }) => toast(`Не играет: ${message}`, { error: true }));
+player.on("needsGesture", () => toast("Нажми ▶"));
 player.on("moodExhausted", async () => {
+  if (player.context?.type !== "mood") return;
   const { startMood } = await import("./views.js");
   startMood(player.context.id);
 });
@@ -61,18 +65,18 @@ els.next.addEventListener("click", () => player.next());
 els.shuffle.addEventListener("click", () => player.setShuffle(!player.shuffle));
 els.repeat.addEventListener("click", () => player.cycleRepeat());
 els.d3.addEventListener("click", () => player.toggleSpatial());
-els.slowed.addEventListener("click", () => player.toggleSlowed());
-els.reverb.addEventListener("click", () => player.toggleReverb());
-$("#queueBtn").addEventListener("click", openQueueTab);
-$("#pbCover").addEventListener("click", () => player.track && nowPlaying.toggle());
-$(".pb-meta").addEventListener("click", () => player.track && nowPlaying.toggle());
+els.sound.addEventListener("click", openSound);
+$("#queueBtn").addEventListener("click", openQueue);
+$("#pbCover").addEventListener("click", () => nowPlaying.show());
+$(".pb-meta").addEventListener("click", () => nowPlaying.show());
 els.heart.addEventListener("click", async () => { if (player.track) { await toggleFavorite(player.track); renderBar(); } });
 els.seek.addEventListener("input", () => {
   const duration = player.engine.duration || player.track?.duration || 0;
   player.engine.seek(Number(els.seek.value) / 1000 * duration);
   paintRange(els.seek);
 });
-els.volume.addEventListener("input", () => { player.setVolume(Number(els.volume.value) / 100); paintRange(els.volume); });
+els.volume.addEventListener("input", () => { player.setVolume(Number(els.volume.value) / 100); paintRange(els.volume); syncVolume(); });
+document.addEventListener("volume-changed", () => { els.volume.value = Math.round(player.volume * 100); paintRange(els.volume); });
 
 /* ───── navigation ───── */
 
@@ -82,12 +86,9 @@ let searchTimer = 0;
 $("#searchInput").addEventListener("input", (event) => {
   clearTimeout(searchTimer);
   const query = event.target.value;
-  searchTimer = setTimeout(() => {
-    nowPlaying.hide();
-    navigate("search", { query }, { replace: currentView()?.name === "search" });
-  }, 320);
+  searchTimer = setTimeout(() => navigate("search", { query }, { replace: currentView()?.name === "search" }), 300);
 });
-$("#searchInput").addEventListener("focus", () => { if (currentView()?.name !== "search") { nowPlaying.hide(); navigate("search", { query: $("#searchInput").value }); } });
+$("#searchInput").addEventListener("focus", () => { nowPlaying.hide(); if (currentView()?.name !== "search") navigate("search", { query: $("#searchInput").value }); });
 
 /* ───── keyboard ───── */
 
@@ -101,11 +102,9 @@ document.addEventListener("keydown", (event) => {
     case "ArrowRight": if (event.shiftKey) player.next(); else player.engine.seek(player.engine.currentTime + 5); break;
     case "ArrowLeft": if (event.shiftKey) player.prev(); else player.engine.seek(player.engine.currentTime - 5); break;
     case "KeyD": player.toggleSpatial(); break;
-    case "KeyS": player.toggleSlowed(); break;
-    case "KeyR": player.toggleReverb(); break;
     case "KeyL": if (player.track) toggleFavorite(player.track).then(renderBar); break;
     case "KeyF": if (player.track) nowPlaying.setImmersive(!nowPlaying.immersive); break;
-    case "Escape": if (nowPlaying.immersive) nowPlaying.setImmersive(false); else if (nowPlaying.open) nowPlaying.hide(); break;
+    case "Escape": if (nowPlaying.immersive) nowPlaying.setImmersive(false); else nowPlaying.hide(); break;
     default: break;
   }
 });
@@ -116,28 +115,27 @@ listen("track-changed", ({ id, track }) => {
   if (track) library.set(id, track);
   const row = $(`.trow[data-id="${CSS.escape(id)}"]`);
   if (row) import("./ui.js").then(({ stateBadge }) => { const cell = row.querySelector(".tstate"); if (cell) cell.innerHTML = stateBadge(track); });
-  if (track?.state === "ready" && player.track?.id === id && !player.playing) toast(`«${track.title}» теперь в полном 3D`);
   updatePrep();
 });
 listen("prep-progress", () => updatePrep());
-export async function importLikes({ quiet = false } = {}) {
-  if (!quiet) toast("Забираю лайки из Яндекс Музыки…");
+listen("accounts-changed", () => { if (currentView()?.name === "settings") navigate("settings", {}, { replace: true }); });
+listen("yandex-signed-in", () => syncLikes());
+document.addEventListener("library-changed", () => { updatePrep(); renderBar(); });
+
+/** Brings new Yandex likes into favourites; speaks only when there is something new. */
+export async function syncLikes({ manual = false } = {}) {
   try {
-    const count = await api.importYandexLikes();
-    library.clear();
-    toast(count ? `Из Яндекса добавлено ${count} треков в избранное. Скачиваю и готовлю в 3D по очереди.` : "В Яндекс Музыке нет лайкнутых треков");
-    if (["favorites", "home"].includes(currentView()?.name)) navigate(currentView().name, currentView().params, { replace: true });
+    const { added, total } = await api.importYandexLikes();
+    if (added) {
+      library.clear();
+      toast(`+${added} ${plural(added, "трек", "трека", "треков")} из Яндекс Музыки`);
+      if (["favorites", "home"].includes(currentView()?.name)) navigate(currentView().name, currentView().params, { replace: true });
+    } else if (manual) toast(`Новых лайков нет · всего ${total}`);
     updatePrep();
   } catch (error) {
-    toast(`Не получилось забрать лайки: ${error}`, { error: true });
+    if (manual) toast(`Яндекс: ${error}`, { error: true });
   }
 }
-listen("yandex-signed-in", () => importLikes().then(() => api.prefSet("likesImported", true)));
-listen("accounts-changed", () => {
-  toast("Аккаунт обновлён");
-  if (currentView()?.name === "settings") navigate("settings", {}, { replace: true });
-});
-document.addEventListener("library-changed", () => { updatePrep(); renderBar(); });
 
 let prepTimer = 0;
 function updatePrep() {
@@ -147,10 +145,9 @@ function updatePrep() {
     if (!prep) return;
     const share = prep.total ? prep.ready / prep.total : 0;
     $(".prep-fill").style.strokeDashoffset = String(94.2 * (1 - share));
-    $("#prepSub").textContent = prep.total
-      ? prep.pending ? `${prep.ready}/${prep.total} в 3D · готовлю ещё ${prep.pending}${player.playing ? " (после паузы)" : ""}` : `${prep.ready}/${prep.total} готовы в 3D`
-      : "лайкни треки — подготовлю";
+    $("#prepSub").textContent = prep.total ? `${prep.ready} из ${prep.total}` : "пусто";
     $("#prepCard").classList.toggle("busy", prep.pending > 0);
+    $("#prepCard").title = prep.pending ? `Готовлю ещё ${prep.pending}. Стемы делаются, когда музыка на паузе.` : "Всё готово";
   }, 250);
 }
 
@@ -169,43 +166,48 @@ setInterval(analyzeIdle, 15000);
 
 /* ───── frame loop ───── */
 
+let lastSave = 0;
 function frame(now) {
   const engine = player.engine;
   engine.tick();
   const duration = engine.duration || player.track?.duration || 0;
   const time = engine.currentTime;
-  els.cur.textContent = fmtTime(time); els.dur.textContent = fmtTime(duration);
-  if (!els.seek.matches(":active") && duration) { els.seek.value = Math.round(time / duration * 1000); paintRange(els.seek); }
+  if (!nowPlaying.open && player.track) {
+    els.cur.textContent = fmtTime(time); els.dur.textContent = fmtTime(duration);
+    if (!els.seek.matches(":active") && duration) { els.seek.value = Math.round(time / duration * 1000); paintRange(els.seek); }
+  }
   if (engine.playing && duration && time >= duration - 0.05) player.next(true);
+  if (engine.playing && now - lastSave > 5000) { lastSave = now; player.saveSession(); }
   drawFrame(now);
   requestAnimationFrame(frame);
 }
 
-// Animation frames stop when the window is hidden; keep motion scheduled and the queue advancing.
 setInterval(() => {
   if (!document.hidden) return;
   const engine = player.engine;
   engine.tick();
   if (engine.playing && engine.duration && engine.currentTime >= engine.duration - 0.05) player.next(true);
 }, 250);
+window.addEventListener("beforeunload", () => player.saveSession());
 
 /* ───── start ───── */
 
 (async () => {
+  const shown = performance.now();
   await player.restore();
-  els.volume.value = Math.round(player.volume * 100); paintRange(els.volume); paintRange(els.seek);
-  renderBar();
+  els.volume.value = Math.round(player.volume * 100); paintRange(els.volume); syncVolume(); paintRange(els.seek);
   await refreshPlaylists();
   renderSidePlaylists();
   navigate("home");
   updatePrep();
-  // Signed in before likes import existed (or on another run): pull them once automatically.
-  const accounts = await api.accounts().catch(() => ({}));
-  if (accounts.yandex?.connected && !(await api.prefGet("likesImported", false))) {
-    await importLikes();
-    api.prefSet("likesImported", true);
-  }
   requestAnimationFrame(frame);
+  // The splash stays a moment so it reads as a logo, not a flicker.
+  setTimeout(() => $("#splash")?.classList.add("out"), Math.max(0, 1000 - (performance.now() - shown)));
+  setTimeout(() => $("#splash")?.remove(), 1800);
+  await player.restoreSession().catch(() => {});
+  renderBar();
+  const accounts = await api.accounts().catch(() => ({}));
+  if (accounts.yandex?.connected) syncLikes();
 })();
 
-window.nearfield = { player, navigate, api, importLikes };
+window.nearfield = { player, navigate, api, syncLikes };

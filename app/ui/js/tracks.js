@@ -31,7 +31,7 @@ function row(track, index, options) {
       ${options.album === false ? "" : `<span class="talbum">${esc(track.album || "")}</span>`}
       <span class="tsrc">${sourceBadges(track)}</span>
       <span class="tstate">${stateBadge(library.get(track.id))}</span>
-      <button class="icon-btn heart ${fav ? "on" : ""}" data-act="fav" title="${fav ? "Убрать из избранного" : "В избранное — скачается и подготовится в 3D"}">${ICON.heart}</button>
+      <button class="icon-btn heart ${fav ? "on" : ""}" data-act="fav" title="${fav ? "Убрать из избранного" : "В избранное"}">${ICON.heart}</button>
       <span class="tdur">${fmtTime(track.duration)}</span>
       <button class="icon-btn" data-act="more" title="Ещё">${ICON.more}</button>
     </div>`;
@@ -110,7 +110,7 @@ export async function toggleFavorite(track) {
   await api.setFavorite(track, favorite);
   library.set(track.id, { ...(current || track), favorite, state: current?.state || "new" });
   document.dispatchEvent(new CustomEvent("library-changed", { detail: { id: track.id } }));
-  toast(favorite ? `«${track.title}» в избранном — скачаю и подготовлю в 3D` : `«${track.title}» убран из избранного`);
+  toast(favorite ? "Добавлено в избранное" : "Удалено из избранного");
 }
 
 export function trackMenu(event, track, options = {}) {
@@ -142,11 +142,11 @@ export function trackMenu(event, track, options = {}) {
 
 export async function newPlaylist(tracks = []) {
   const { ask } = await import("./ui.js");
-  const name = await ask("Новый плейлист", { placeholder: "Например, «Ночная поездка»", confirm: "Создать" });
+  const name = await ask("Новый плейлист", { placeholder: "Название", confirm: "Создать" });
   if (!name) return null;
   const id = await api.playlistCreate(name, tracks);
   await refreshPlaylists();
-  toast(tracks.length ? `Плейлист «${name}» создан, ${tracks.length === 1 ? "трек добавлен" : "треки добавлены"}` : `Плейлист «${name}» создан`);
+  toast(`Плейлист «${name}» создан`);
   return id;
 }
 

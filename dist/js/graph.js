@@ -71,6 +71,8 @@ export function computeParams(frame, options, head, out = new Float32Array(PARAM
   return out;
 }
 
+export const USER_EQ_BANDS = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+
 export class SpatialGraph {
   constructor(ctx, calibration, { meters = false } = {}) {
     this.ctx = ctx;
@@ -126,7 +128,9 @@ export class SpatialGraph {
     this.limiter = ctx.createDynamicsCompressor();
     this.limiter.threshold.value = -2; this.limiter.knee.value = 0; this.limiter.ratio.value = 20;
     this.limiter.attack.value = 0.002; this.limiter.release.value = 0.12;
-    const tailNodes = [this.outBus, this.bassShelf, ...this.eqFilters, this.master, this.limiter];
+    // User equaliser (flat by default): shelves at the ends, peaking bands in between.
+    this.userEq = USER_EQ_BANDS.map((frequency, i) => makeFilter(ctx, i === 0 ? "lowshelf" : i === USER_EQ_BANDS.length - 1 ? "highshelf" : "peaking", frequency, i === 0 || i === USER_EQ_BANDS.length - 1 ? 0.7 : 1.1, 0));
+    const tailNodes = [this.outBus, this.bassShelf, ...this.eqFilters, ...this.userEq, this.master, this.limiter];
     if (meters) {
       this.analyser = ctx.createAnalyser();
       this.analyser.fftSize = 512; this.analyser.smoothingTimeConstant = 0.83;
@@ -262,6 +266,10 @@ export class SpatialGraph {
 
   setFxBuffer(buffer) {
     if (buffer && !this.fxConvolver.buffer) this.fxConvolver.buffer = buffer;
+  }
+
+  setUserEq(gains, timeConstant = 0.05) {
+    this.userEq.forEach((filter, i) => this.setParam(filter.gain, gains?.[i] ?? 0, timeConstant));
   }
 
   setMix({ spatial, headphone, bass, fxReverb = false, fxAmount = 0 }, timeConstant = 0.03) {

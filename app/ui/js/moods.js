@@ -11,39 +11,39 @@ const band = (x, lo, hi, soft) => Math.min(ramp(x, lo - soft, lo), 1 - ramp(x, h
 
 export const MOODS = [
   {
-    id: "energy", label: "Заряд", sub: "бодро, громко, вперёд",
+    id: "energy", label: "Заряд", sub: "громко и бодро",
     colors: ["#ff7a45", "#ffd23f"],
     tempo: [112, 175], drive: 1, styles: { electronic: 1, rap: 0.8, rock: 0.9, pop: 0.6 },
     genres: ["dance", "electronics", "rock", "rap", "rusrap", "pop", "edm", "house", "metal", "punk"],
     search: ["workout", "energy hits", "бодрая музыка"],
-    scene: { mode: "pulse", room: "club", width: 1.15, distance: 1.7, motion: 0.75, roomAmt: 0.9, cue: 0.7, bass: 5, ambience: "none", rate: 1, fxReverb: false },
+    scene: { mode: "pulse", room: "club", width: 1.15, distance: 1.7, motion: 0.7, roomAmt: 0.8, cue: 0.7, bass: 5, ambience: "none", rate: 1, fxReverb: false },
   },
   {
-    id: "chill", label: "Чилл", sub: "расслабиться, никуда не спешить",
+    id: "chill", label: "Чилл", sub: "никуда не спешить",
     colors: ["#5ee7df", "#3a7bd5"],
     tempo: [70, 108], drive: 0.35, styles: { pop: 0.7, jazz: 0.8, ambient: 0.8, rap: 0.4 },
     genres: ["lounge", "chill", "rnb", "soul", "indie", "jazz", "lofi", "relax"],
     search: ["lofi chill", "chill vibes", "chillhop"],
-    scene: { mode: "inside", room: "studio", width: 1.1, distance: 2, motion: 0.35, roomAmt: 1.2, cue: 0.6, bass: 2, ambience: "none", rate: 1, fxReverb: false },
+    scene: { mode: "inside", room: "studio", width: 1.1, distance: 2, motion: 0.35, roomAmt: 1, cue: 0.6, bass: 2, ambience: "none", rate: 1, fxReverb: false },
   },
   {
-    id: "sad", label: "Грусть", sub: "медленно, глубоко, slowed + reverb",
+    id: "sad", label: "Грусть", sub: "slowed + reverb",
     colors: ["#5f6caf", "#1f2a44"],
     tempo: [55, 100], drive: 0.3, styles: { pop: 0.7, ambient: 0.7, rap: 0.4 },
     genres: ["indie", "alternative", "singer-songwriter", "soundtrack", "rnb", "pop"],
     search: ["sad songs", "грустные песни", "slowed reverb"],
-    scene: { mode: "orbit", orbitBars: 8, room: "cathedral", width: 1.2, distance: 2.4, motion: 0.4, roomAmt: 1.6, cue: 0.6, bass: 4, ambience: "none", rate: 0.85, slowRate: 0.85, fxReverb: true },
+    scene: { mode: "orbit", orbitBars: 8, room: "studio", width: 1.2, distance: 2.2, motion: 0.35, roomAmt: 1, cue: 0.6, bass: 4, ambience: "none", rate: 0.85, fxReverb: true, fxAmount: 0.55 },
   },
   {
-    id: "focus", label: "Фокус", sub: "работать и не отвлекаться",
+    id: "focus", label: "Фокус", sub: "без слов и отвлечений",
     colors: ["#a8edea", "#5b8c85"],
     tempo: [60, 125], drive: 0.4, vocals: false, styles: { ambient: 1, classical: 0.9, electronic: 0.6, jazz: 0.6 },
     genres: ["ambient", "classical", "instrumental", "soundtrack", "lofi", "newage", "electronics"],
     search: ["focus music", "deep focus instrumental", "lofi beats"],
-    scene: { mode: "stage", room: "studio", width: 1, distance: 2.2, motion: 0.12, roomAmt: 1, cue: 0.5, bass: 1, ambience: "none", rate: 1, fxReverb: false },
+    scene: { mode: "stage", room: "studio", width: 1, distance: 2.2, motion: 0.1, roomAmt: 0.9, cue: 0.5, bass: 1, ambience: "none", rate: 1, fxReverb: false },
   },
   {
-    id: "party", label: "Вечеринка", sub: "танцпол у тебя в голове",
+    id: "party", label: "Вечеринка", sub: "танцпол в голове",
     colors: ["#f857a6", "#7b2ff7"],
     tempo: [118, 135], drive: 1, styles: { electronic: 1, pop: 0.8, rap: 0.7 },
     genres: ["dance", "electronics", "house", "pop", "edm", "techno", "disco"],
@@ -51,12 +51,12 @@ export const MOODS = [
     scene: { mode: "pulse", room: "club", width: 1.1, distance: 1.7, motion: 0.85, roomAmt: 0.9, cue: 0.65, bass: 6, ambience: "none", rate: 1, fxReverb: false },
   },
   {
-    id: "night", label: "Ночь", sub: "темно, тихо, звук плывёт",
+    id: "night", label: "Ночь", sub: "темно и тихо",
     colors: ["#141e30", "#6a5acd"],
     tempo: [55, 95], drive: 0.25, styles: { ambient: 1, electronic: 0.5, pop: 0.5 },
     genres: ["ambient", "electronics", "triphop", "downtempo", "synthwave", "lounge"],
     search: ["night drive synthwave", "late night vibes", "ambient night"],
-    scene: { mode: "dream", room: "cathedral", width: 1.3, distance: 3, motion: 0.55, roomAmt: 1.3, cue: 0.7, bass: 3, ambience: "rain", ambienceLevel: 0.35, rate: 1, fxReverb: true },
+    scene: { mode: "dream", room: "studio", width: 1.25, distance: 2.4, motion: 0.45, roomAmt: 1, cue: 0.7, bass: 3, ambience: "none", rate: 1, fxReverb: true, fxAmount: 0.35 },
   },
   {
     id: "love", label: "Романтика", sub: "тепло и близко",
@@ -67,12 +67,12 @@ export const MOODS = [
     scene: { mode: "inside", room: "studio", width: 1, distance: 1.2, motion: 0.25, roomAmt: 1, cue: 0.6, bass: 2, ambience: "none", rate: 1, fxReverb: false },
   },
   {
-    id: "drive", label: "Дорога", sub: "окно открыто, трасса пустая",
+    id: "drive", label: "Дорога", sub: "трасса пустая",
     colors: ["#f7971e", "#e44d26"],
     tempo: [95, 140], drive: 0.8, styles: { rock: 1, electronic: 0.8, pop: 0.7, rap: 0.6 },
     genres: ["rock", "alternative", "indie", "synthwave", "pop", "electronics", "rusrock"],
     search: ["road trip songs", "driving music", "музыка в дорогу"],
-    scene: { mode: "stage", room: "hall", width: 1.25, distance: 3.5, motion: 0.3, roomAmt: 1, cue: 0.6, bass: 4, ambience: "none", rate: 1, fxReverb: false },
+    scene: { mode: "stage", room: "club", width: 1.25, distance: 3, motion: 0.3, roomAmt: 0.9, cue: 0.6, bass: 4, ambience: "none", rate: 1, fxReverb: false },
   },
 ];
 

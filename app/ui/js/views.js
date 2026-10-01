@@ -1,10 +1,12 @@
-/* Pages: home, search, artist, album, favourites, playlist, mood, settings. */
+/* Pages: home, search, artist, album, favourites, playlist, wave, settings. */
 
 import { api, listen } from "./api.js";
-import { buildMoodQueue, MOODS } from "./moods.js";
-import { player } from "./player.js";
-import { library, newPlaylist, playlistsCache, refreshPlaylists, renderTracks, setNavigator, toggleFavorite } from "./tracks.js";
+import { MOODS } from "./moods.js";
+import { EQ_PRESETS, player } from "./player.js";
+import { library, newPlaylist, playlistsCache, refreshPlaylists, renderTracks, setNavigator } from "./tracks.js";
 import { $, $$, artistNames, ask, confirmBox, cover, esc, fmtCount, fmtTime, ICON, plural, PROVIDERS, toast } from "./ui.js";
+import { ACTIVITIES, CHARACTER, DEFAULT_WAVE, describe, LANGUAGE, loadWave, MOOD, startWave } from "./wave.js";
+import { USER_EQ_BANDS } from "../engine/graph.js";
 
 const view = $("#view");
 const stack = [];
@@ -17,11 +19,10 @@ export function navigate(name, params = {}, { replace = false, back = false } = 
   $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.nav === name));
   $$(".side-playlist").forEach((item) => item.classList.toggle("active", name === "playlist" && Number(item.dataset.id) === params.id));
   $("#backBtn").disabled = !stack.length;
+  if (name !== "search") $("#searchInput").value = "";
   view.scrollTop = 0;
   view.classList.remove("in"); void view.offsetWidth; view.classList.add("in");
-  if (name !== "search") $("#searchInput").value = "";
-  const page = PAGES[name] || PAGES.home;
-  page(params);
+  (PAGES[name] || PAGES.home)(params);
 }
 setNavigator(navigate);
 
@@ -32,52 +33,53 @@ export function goBack() {
 
 export const currentView = () => current;
 
-const heroPlay = (label = "Слушать") => `<button class="btn primary big" data-act="play">${ICON.play}<span>${label}</span></button>`;
-
-function section(title, body, extra = "") {
-  return `<section class="sec"><div class="sec-head"><h2>${title}</h2>${extra}</div>${body}</section>`;
-}
+const LIKED_ART = (size) => `<img class="cover ${size} liked-art" src="img/liked@512.png" alt="" />`;
+const playBtn = (label = "Слушать") => `<button class="btn primary big" data-act="play">${ICON.play}<span>${label}</span></button>`;
+const section = (title, body, extra = "") => `<section class="sec"><div class="sec-head"><h2>${title}</h2>${extra}</div>${body}</section>`;
 
 /* ───── home ───── */
 
 async function home() {
   const hour = new Date().getHours();
   const greeting = hour < 5 ? "Доброй ночи" : hour < 12 ? "Доброе утро" : hour < 18 ? "Добрый день" : "Добрый вечер";
-  const suggested = hour < 5 || hour >= 22 ? ["night", "sad", "chill"] : hour < 11 ? ["energy", "focus", "drive"] : hour < 18 ? ["focus", "drive", "party"] : ["chill", "love", "party"];
   view.innerHTML = `
     <div class="page">
       <h1 class="greet">${greeting}</h1>
-      <p class="lead">Включи настроение — подберу треки и звук. Всё, что в избранном, само скачивается и готовится в 3D, пока ты не слушаешь.</p>
-      <div class="mood-strip">${suggested.map((id) => moodCard(MOODS.find((m) => m.id === id), "wide")).join("")}</div>
+      <div class="quick" id="quick"></div>
+      <div id="homeWave"></div>
       <div id="homeRecent"></div>
-      <div id="homeFav"></div>
       <div id="homeLists"></div>
     </div>`;
-  wireMoodCards(view);
   const [history, favorites] = await Promise.all([api.history().catch(() => []), api.favorites().catch(() => [])]);
   if (current?.name !== "home") return;
   history.concat(favorites).forEach((t) => library.set(t.id, t));
+  const lists = playlistsCache.list;
+  // Spotify-style quick tiles: favourites, wave, playlists.
+  const quick = [
+    `<button class="qtile" data-goto="favorites">${LIKED_ART("qt")}<b>Избранное</b><span class="qplay">${ICON.play}</span></button>`,
+    `<button class="qtile" data-goto="wave"><span class="cover qt wave-art"><i></i></span><b>Моя волна</b><span class="qplay">${ICON.play}</span></button>`,
+    ...lists.slice(0, 4).map((p) => `<button class="qtile" data-playlist="${p.id}">${collage(p.covers, "qt")}<b>${esc(p.name)}</b></button>`),
+  ];
+  $("#quick").innerHTML = quick.join("");
+  $$("[data-goto]", $("#quick")).forEach((el) => el.addEventListener("click", (e) => {
+    if (e.target.closest(".qplay")) {
+      e.stopPropagation();
+      if (el.dataset.goto === "favorites") player.playList(favorites, 0, { type: "favorites", label: "Избранное" });
+      else loadWave().then((state) => startWave(state).catch((err) => toast(String(err.message || err), { error: true })));
+      return;
+    }
+    navigate(el.dataset.goto);
+  }));
+  $$("[data-playlist]", $("#quick")).forEach((el) => el.addEventListener("click", () => navigate("playlist", { id: Number(el.dataset.playlist) })));
   if (history.length) {
-    $("#homeRecent").innerHTML = section("Недавно слушал", `<div class="tiles">${history.slice(0, 12).map((t, i) => tile(t, i)).join("")}</div>`);
+    $("#homeRecent").innerHTML = section("Недавнее", `<div class="tiles">${history.slice(0, 12).map(tile).join("")}</div>`);
     wireTiles($("#homeRecent"), history.slice(0, 12), { type: "history", label: "Недавнее" });
   }
   if (favorites.length) {
-    $("#homeFav").innerHTML = section("Из избранного", `<div id="homeFavList"></div>`, `<button class="link" data-goto="favorites">Все ${favorites.length}</button>`);
-    renderTracks($("#homeFavList"), favorites.slice(0, 6), { context: { type: "favorites", label: "Избранное" } });
+    $("#homeLists").innerHTML = section("Из избранного", `<div id="homeFavList"></div>`, `<button class="link more" data-goto="favorites">Все</button>`);
+    renderTracks($("#homeFavList"), favorites.slice(0, 5), { context: { type: "favorites", label: "Избранное" } });
+    $$("[data-goto]", $("#homeLists")).forEach((el) => el.addEventListener("click", () => navigate(el.dataset.goto)));
   }
-  if (!history.length && !favorites.length) {
-    $("#homeRecent").innerHTML = `<div class="onboard">
-      <div><b>1. Найди музыку</b><span>Поиск идёт сразу по Яндекс Музыке, SoundCloud и Spotify. Один трек с разных площадок показывается один раз.</span></div>
-      <div><b>2. Жми ♥</b><span>Избранное скачивается и разбирается на вокал, бас, ударные и музыку — это и есть настоящий 3D.</span></div>
-      <div><b>3. Слушай в наушниках</b><span>Стиль трека определится сам, сцена подстроится. Или выбери настроение.</span></div>
-    </div>`;
-  }
-  const lists = playlistsCache.list;
-  if (lists.length) {
-    $("#homeLists").innerHTML = section("Плейлисты", `<div class="tiles">${lists.map(playlistTile).join("")}</div>`);
-    $$("[data-playlist]", $("#homeLists")).forEach((el) => el.addEventListener("click", () => navigate("playlist", { id: Number(el.dataset.playlist) })));
-  }
-  $$("[data-goto]", view).forEach((el) => el.addEventListener("click", () => navigate(el.dataset.goto)));
 }
 
 function tile(track, index) {
@@ -86,10 +88,6 @@ function tile(track, index) {
 
 function wireTiles(root, tracks, context) {
   $$(".tile", root).forEach((el) => el.addEventListener("click", () => player.playList(tracks, Number(el.dataset.index), context)));
-}
-
-function playlistTile(p) {
-  return `<button class="tile" data-playlist="${p.id}">${collage(p.covers)}<b>${esc(p.name)}</b><small>${p.count} ${plural(p.count, "трек", "трека", "треков")}${p.count ? ` · ${p.ready} в 3D` : ""}</small></button>`;
 }
 
 function collage(covers, size = "lg") {
@@ -103,8 +101,7 @@ async function search({ query = "" }) {
   const input = $("#searchInput");
   if (input.value !== query) input.value = query;
   if (!query.trim()) {
-    view.innerHTML = `<div class="page"><h1>Поиск</h1><p class="lead">Ищу сразу в Яндекс Музыке, SoundCloud и Spotify. Дубликаты одного трека с разных площадок склеиваются в одну строку — значки справа показывают, где он есть.</p>
-      ${section("Или просто настроение", `<div class="mood-grid">${MOODS.map((m) => moodCard(m)).join("")}</div>`)}</div>`;
+    view.innerHTML = `<div class="page"><h1>Поиск</h1>${section("Настроение", `<div class="mood-grid">${MOODS.map((m) => moodCard(m)).join("")}</div>`)}</div>`;
     wireMoodCards(view);
     input.focus();
     return;
@@ -116,7 +113,7 @@ async function search({ query = "" }) {
   const [top, ...rest] = result.tracks;
   const errors = result.errors.length ? `<div class="note warn">${result.errors.map(esc).join("<br>")}</div>` : "";
   if (!top) {
-    view.innerHTML = `<div class="page">${errors}<div class="empty-big"><b>Ничего не нашлось</b><span>Попробуй иначе написать название или имя артиста.</span></div></div>`;
+    view.innerHTML = `<div class="page">${errors}<div class="empty-big"><b>Ничего не нашлось</b></div></div>`;
     return;
   }
   view.innerHTML = `
@@ -127,18 +124,16 @@ async function search({ query = "" }) {
           <h2>Лучшее совпадение</h2>
           <div class="best-card" id="bestCard">
             ${cover(top.cover, "xl")}
-            <div><b>${esc(top.title)}</b><span>${esc(artistNames(top))}</span>
-              <div class="chips">${top.album ? `<span class="chip">${esc(top.album)}</span>` : ""}${top.year ? `<span class="chip">${top.year}</span>` : ""}${top.genre ? `<span class="chip">${esc(top.genre)}</span>` : ""}<span class="chip">${fmtTime(top.duration)}</span></div>
-            </div>
+            <div><b>${esc(top.title)}</b><span>${esc(artistNames(top))}${top.year ? ` · ${top.year}` : ""}</span></div>
             <button class="play-fab" data-act="play">${ICON.play}</button>
           </div>
         </div>
         <div class="best-list"><h2>Треки</h2><div id="topTracks"></div></div>
       </div>
       ${result.artists.length ? section("Артисты", `<div class="artist-row">${result.artists.slice(0, 8).map(artistBubble).join("")}</div>`) : ""}
-      ${rest.length > 4 ? section("Все треки", `<div id="moreTracks"></div>`) : ""}
+      ${rest.length > 4 ? section("Ещё треки", `<div id="moreTracks"></div>`) : ""}
     </div>`;
-  const context = { type: "search", label: `Поиск: ${query}` };
+  const context = { type: "search", label: query };
   $("#bestCard").addEventListener("click", () => player.playList(result.tracks, 0, context));
   renderTracks($("#topTracks"), result.tracks.slice(0, 5), { context, album: false });
   if (rest.length > 4) renderTracks($("#moreTracks"), result.tracks.slice(5), { context });
@@ -146,8 +141,7 @@ async function search({ query = "" }) {
 }
 
 function artistBubble(a) {
-  const providers = [...new Set(a.sources.map((s) => s.provider))].map((p) => PROVIDERS[p]?.short).join(" · ");
-  return `<button class="artist-bubble" data-artist="${esc(a.id)}">${a.image ? `<img src="${esc(a.image)}" alt="" loading="lazy" />` : `<span class="ph">${esc(a.name[0] || "?")}</span>`}<b>${esc(a.name)}</b><small>${a.followers ? `${fmtCount(a.followers)} · ` : ""}${providers}</small></button>`;
+  return `<button class="artist-bubble" data-artist="${esc(a.id)}">${a.image ? `<img src="${esc(a.image)}" alt="" loading="lazy" />` : `<span class="ph">${esc(a.name[0] || "?")}</span>`}<b>${esc(a.name)}</b><small>Артист</small></button>`;
 }
 
 function wireArtists(root) {
@@ -162,45 +156,36 @@ async function artist({ id }) {
   try {
     page = await api.artist(id);
   } catch (error) {
-    view.innerHTML = `<div class="page"><div class="empty-big"><b>Не удалось открыть артиста</b><span>${esc(error)}</span></div></div>`;
+    view.innerHTML = `<div class="page"><div class="empty-big"><b>Не удалось открыть</b><span>${esc(error)}</span></div></div>`;
     return;
   }
   if (current?.params?.id !== id) return;
   const a = page.artist;
   const hero = page.images[0] || a.image;
-  const stats = [
-    page.listeners ? `${fmtCount(page.listeners)} слушателей в месяц` : null,
-    page.likes ? `${fmtCount(page.likes)} ${a.sources.some((s) => s.provider === "yandex") ? "лайков" : "подписчиков"}` : null,
-  ].filter(Boolean).join(" · ");
-  const providers = [...new Set(page.providers)].map((p) => `<span class="src src-${p}" style="--c:${PROVIDERS[p]?.color}">${PROVIDERS[p]?.short}</span>`).join("");
+  const stats = page.listeners ? `${fmtCount(page.listeners)} слушателей за месяц` : page.likes ? `${fmtCount(page.likes)} подписчиков` : "";
   const context = { type: "artist", label: a.name, id };
   view.innerHTML = `
     <div class="artist-hero" style="--hero:url('${esc(hero || "")}')">
       <div class="hero-shade"></div>
       <div class="hero-content">
-        ${a.image ? `<img class="hero-avatar" src="${esc(a.image)}" alt="" />` : ""}
         <div>
-          <span class="eyebrow">Артист ${providers}</span>
+          <span class="eyebrow">Артист</span>
           <h1>${esc(a.name)}</h1>
-          <p>${stats}${a.genres.length ? ` · ${a.genres.slice(0, 3).map(esc).join(", ")}` : ""}</p>
-          <div class="hero-actions">${heroPlay()}<button class="btn ghost" data-act="shuffle">${ICON.shuffle}<span>Перемешать</span></button><button class="btn ghost" data-act="favall">${ICON.heart}<span>Всё популярное в избранное</span></button></div>
+          <p>${stats}</p>
         </div>
       </div>
     </div>
     <div class="page">
+      <div class="action-row">${playBtn()}<button class="icon-btn big" data-act="shuffle" title="Перемешать">${ICON.shuffle}</button></div>
       ${section("Популярное", `<div id="artistTracks"></div>`)}
-      ${page.albums.length ? section("Альбомы и синглы", `<div class="tiles">${page.albums.map((al) => `<button class="tile" data-album="${esc(al.id)}" data-title="${esc(al.title)}" data-cover="${esc(al.cover || "")}">${cover(al.cover, "lg")}<b>${esc(al.title)}</b><small>${al.year || ""}${al.kind === "single" ? " · сингл" : ""}</small></button>`).join("")}</div>`) : ""}
-      ${page.description ? section("Об артисте", `<div class="about"><p>${esc(page.description)}</p></div>`) : ""}
-      ${page.images.length > 1 ? section("Фото", `<div class="photos">${page.images.slice(0, 6).map((src) => `<img src="${esc(src)}" alt="" loading="lazy" />`).join("")}</div>`) : ""}
+      ${page.albums.length ? section("Альбомы", `<div class="tiles">${page.albums.map((al) => `<button class="tile" data-album="${esc(al.id)}" data-title="${esc(al.title)}" data-cover="${esc(al.cover || "")}">${cover(al.cover, "lg")}<b>${esc(al.title)}</b><small>${al.year || ""}${al.kind === "single" ? " · Сингл" : ""}</small></button>`).join("")}</div>`) : ""}
       ${page.similar.length ? section("Похожие", `<div class="artist-row">${page.similar.slice(0, 10).map(artistBubble).join("")}</div>`) : ""}
-      ${page.links.length ? section("Ссылки", `<div class="links">${dedupeLinks(page.links).map((l) => `<a href="${esc(l.url)}" target="_blank" class="chip link-chip">${ICON.ext}${esc(l.title)}</a>`).join("")}</div>`) : ""}
+      ${page.description ? section("Об артисте", `<div class="about"><p>${esc(page.description)}</p>${a.genres.length ? `<div class="chips">${a.genres.slice(0, 4).map((g) => `<span class="chip">${esc(g)}</span>`).join("")}</div>` : ""}</div>`) : ""}
+      ${page.links.length ? `<div class="links">${dedupeLinks(page.links).map((l) => `<a href="${esc(l.url)}" target="_blank" class="chip link-chip">${ICON.ext}${esc(l.title)}</a>`).join("")}</div>` : ""}
     </div>`;
   renderTracks($("#artistTracks"), page.tracks, { context });
   $('[data-act="play"]', view).addEventListener("click", () => player.playList(page.tracks, 0, context));
   $('[data-act="shuffle"]', view).addEventListener("click", () => { player.setShuffle(true); player.playList(page.tracks, Math.floor(Math.random() * page.tracks.length), context); });
-  $('[data-act="favall"]', view).addEventListener("click", async () => {
-    for (const t of page.tracks) if (!library.get(t.id)?.favorite) await toggleFavorite(t);
-  });
   $$("[data-album]", view).forEach((el) => el.addEventListener("click", () => navigate("album", { id: el.dataset.album, title: el.dataset.title, cover: el.dataset.cover, artist: a.name })));
   wireArtists(view);
 }
@@ -210,58 +195,52 @@ function dedupeLinks(links) {
   return links.filter((l) => !seen.has(l.url) && seen.add(l.url));
 }
 
-/* ───── album ───── */
+/* ───── lists (album, favourites, playlist) ───── */
 
-async function album({ id, title, cover: art, artist: artistName }) {
-  view.innerHTML = `<div class="page">${listHeader({ kind: "Альбом", title, sub: artistName, art: cover(art, "hero") })}<div id="albumTracks"><div class="skeleton-list">${"<div></div>".repeat(8)}</div></div></div>`;
-  let tracks;
-  try { tracks = await api.album(id); } catch (error) { $("#albumTracks").innerHTML = `<div class="empty-note">${esc(error)}</div>`; return; }
-  const context = { type: "album", label: title, id };
-  const total = tracks.reduce((s, t) => s + t.duration, 0);
-  $(".list-sub", view).textContent = `${artistName} · ${tracks.length} ${plural(tracks.length, "трек", "трека", "треков")} · ${fmtTime(total)}`;
-  renderTracks($("#albumTracks"), tracks, { context, album: false });
-  wireListActions(tracks, context, { title });
+function listHeader({ kind, title, sub, art }) {
+  return `<header class="list-head">${art}<div><span class="eyebrow">${kind}</span><h1>${esc(title)}</h1><p class="list-sub">${esc(sub || "")}</p></div></header>`;
 }
 
-function listHeader({ kind, title, sub, art, extra = "" }) {
-  return `<header class="list-head">${art}<div><span class="eyebrow">${kind}</span><h1>${esc(title)}</h1><p class="list-sub">${esc(sub || "")}</p>
-    <div class="hero-actions">${heroPlay()}<button class="btn ghost" data-act="shuffle">${ICON.shuffle}<span>Перемешать</span></button><button class="btn ghost" data-act="saveas">${ICON.plus}<span>Сохранить как плейлист</span></button>${extra}</div></div></header>`;
+function actionRow(extra = "") {
+  return `<div class="action-row">${playBtn()}<button class="icon-btn big" data-act="shuffle" title="Перемешать">${ICON.shuffle}</button>${extra}</div>`;
 }
 
-function wireListActions(tracks, context, { title }) {
+function wireListActions(tracks, context, { title } = {}) {
   $('[data-act="play"]', view)?.addEventListener("click", () => tracks.length && player.playList(tracks, 0, context));
   $('[data-act="shuffle"]', view)?.addEventListener("click", () => { if (!tracks.length) return; player.setShuffle(true); player.playList(tracks, Math.floor(Math.random() * tracks.length), context); });
   $('[data-act="saveas"]', view)?.addEventListener("click", async () => {
     const id = await api.playlistCreate(title, tracks);
     await refreshPlaylists();
-    toast(`Плейлист «${title}» сохранён — треки скачаются и подготовятся в 3D`);
+    toast(`Плейлист «${title}» сохранён`);
     navigate("playlist", { id });
   });
 }
 
-/* ───── favourites ───── */
+const summary = (tracks) => `${tracks.length} ${plural(tracks.length, "трек", "трека", "треков")}, ${fmtTime(tracks.reduce((s, t) => s + t.duration, 0))}`;
+
+async function album({ id, title, cover: art, artist: artistName }) {
+  view.innerHTML = `<div class="page">${listHeader({ kind: "Альбом", title, sub: artistName, art: cover(art, "hero") })}${actionRow(`<button class="icon-btn big" data-act="saveas" title="Сохранить как плейлист">${ICON.plus}</button>`)}<div id="albumTracks"><div class="skeleton-list">${"<div></div>".repeat(8)}</div></div></div>`;
+  let tracks;
+  try { tracks = await api.album(id); } catch (error) { $("#albumTracks").innerHTML = `<div class="empty-note">${esc(error)}</div>`; return; }
+  const context = { type: "album", label: title, id };
+  $(".list-sub", view).textContent = `${artistName} · ${summary(tracks)}`;
+  renderTracks($("#albumTracks"), tracks, { context, album: false });
+  wireListActions(tracks, context, { title });
+}
 
 async function favorites() {
   const tracks = await api.favorites().catch(() => []);
   tracks.forEach((t) => library.set(t.id, t));
-  const ready = tracks.filter((t) => t.state === "ready").length;
-  const total = tracks.reduce((s, t) => s + t.duration, 0);
+  const accounts = await api.accounts().catch(() => ({}));
   view.innerHTML = `<div class="page">
-    ${listHeader({ kind: "Коллекция", title: "Избранное", sub: `${tracks.length} ${plural(tracks.length, "трек", "трека", "треков")} · ${fmtTime(total)} · ${ready} готово в 3D`, art: `<div class="cover hero fav-art">${ICON.heart}</div>` })}
+    ${listHeader({ kind: "Плейлист", title: "Избранное", sub: summary(tracks), art: LIKED_ART("hero") })}
+    ${actionRow(accounts.yandex?.connected ? `<button class="btn ghost" data-act="likes">Обновить из Яндекса</button>` : "")}
     <div id="favTracks"></div></div>`;
-  $('[data-act="saveas"]', view)?.remove();
-  api.accounts().then((a) => {
-    if (!a.yandex?.connected || current?.name !== "favorites") return;
-    const btn = document.createElement("button");
-    btn.className = "btn ghost"; btn.innerHTML = `${ICON.plus}<span>Забрать лайки из Яндекса</span>`;
-    btn.addEventListener("click", () => window.nearfield.importLikes());
-    $(".hero-actions", view)?.append(btn);
-  }).catch(() => {});
-  renderTracks($("#favTracks"), tracks, { context: { type: "favorites", label: "Избранное" }, empty: "Жми ♥ у любого трека — он появится здесь, скачается и подготовится в 3D." });
-  wireListActions(tracks, { type: "favorites", label: "Избранное" }, { title: "Избранное" });
+  const context = { type: "favorites", label: "Избранное" };
+  renderTracks($("#favTracks"), tracks, { context, empty: "Пока пусто. Жми ♥ у трека." });
+  wireListActions(tracks, context);
+  $('[data-act="likes"]', view)?.addEventListener("click", () => window.nearfield.syncLikes({ manual: true }));
 }
-
-/* ───── playlist ───── */
 
 async function playlist({ id }) {
   await refreshPlaylists();
@@ -269,20 +248,14 @@ async function playlist({ id }) {
   if (!meta) { navigate("home", {}, { replace: true }); return; }
   const tracks = await api.playlistTracks(id).catch(() => []);
   tracks.forEach((t) => library.set(t.id, t));
-  const total = tracks.reduce((s, t) => s + t.duration, 0);
   const context = { type: "playlist", label: meta.name, id };
   view.innerHTML = `<div class="page">
-    ${listHeader({
-      kind: "Плейлист", title: meta.name,
-      sub: `${tracks.length} ${plural(tracks.length, "трек", "трека", "треков")} · ${fmtTime(total)} · ${meta.ready} готово в 3D`,
-      art: collage(meta.covers, "hero"),
-      extra: `<button class="icon-btn" data-act="rename" title="Переименовать">${ICON.edit}</button><button class="icon-btn" data-act="delete" title="Удалить плейлист">${ICON.trash}</button>`,
-    })}
+    ${listHeader({ kind: "Плейлист", title: meta.name, sub: summary(tracks), art: collage(meta.covers, "hero") })}
+    ${actionRow(`<button class="icon-btn big" data-act="more" title="Ещё">${ICON.more}</button>`)}
     <div id="plTracks"></div></div>`;
-  $('[data-act="saveas"]', view)?.remove();
   const redraw = renderTracks($("#plTracks"), tracks, {
     context, reorder: true, playlistId: id,
-    empty: "Плейлист пуст. Найди трек и добавь через «⋯» → «Добавить в плейлист».",
+    empty: "Пусто. Добавляй треки через «⋯».",
     onReorder: (list) => api.playlistReorder(id, list.map((t) => t.id)),
     onRemove: async (track) => {
       await api.playlistRemove(id, track.id);
@@ -290,22 +263,25 @@ async function playlist({ id }) {
       redraw(); refreshPlaylists();
     },
   });
-  wireListActions(tracks, context, { title: meta.name });
-  $('[data-act="rename"]', view).addEventListener("click", async () => {
-    const name = await ask("Название плейлиста", { value: meta.name });
-    if (name) { await api.playlistRename(id, name); await refreshPlaylists(); navigate("playlist", { id }, { replace: true }); }
-  });
-  $('[data-act="delete"]', view).addEventListener("click", async () => {
-    if (await confirmBox("Удалить плейлист?", `«${meta.name}» исчезнет. Сами треки останутся в избранном и истории.`)) {
-      await api.playlistDelete(id); await refreshPlaylists(); navigate("home", {}, { replace: true });
-    }
+  wireListActions(tracks, context);
+  $('[data-act="more"]', view).addEventListener("click", async (event) => {
+    const { openMenu } = await import("./ui.js");
+    openMenu(event, [
+      { label: "Переименовать", icon: ICON.edit, run: async () => {
+        const name = await ask("Название", { value: meta.name });
+        if (name) { await api.playlistRename(id, name); await refreshPlaylists(); navigate("playlist", { id }, { replace: true }); }
+      } },
+      { label: "Удалить", icon: ICON.trash, danger: true, run: async () => {
+        if (await confirmBox("Удалить плейлист?", `«${meta.name}» будет удалён.`)) { await api.playlistDelete(id); await refreshPlaylists(); navigate("home", {}, { replace: true }); }
+      } },
+    ]);
   });
 }
 
-/* ───── mood ───── */
+/* ───── moods (quick cards in search) ───── */
 
-function moodCard(mood, size = "") {
-  return `<button class="mood-card ${size}" data-mood="${mood.id}" style="--a:${mood.colors[0]};--b:${mood.colors[1]}"><span class="mood-glow"></span><b>${mood.label}</b><small>${mood.sub}</small><span class="mood-play">${ICON.play}</span></button>`;
+function moodCard(mood) {
+  return `<button class="mood-card" data-mood="${mood.id}" style="--a:${mood.colors[0]};--b:${mood.colors[1]}"><span class="mood-glow"></span><b>${mood.label}</b><span class="mood-play">${ICON.play}</span></button>`;
 }
 
 function wireMoodCards(root) {
@@ -313,92 +289,159 @@ function wireMoodCards(root) {
 }
 
 export async function startMood(id, el) {
+  const { buildMoodQueue } = await import("./moods.js");
   const mood = MOODS.find((m) => m.id === id);
   el?.classList.add("loading");
   try {
-    const { queue, fromLibrary, discovered } = await buildMoodQueue(mood);
-    if (!queue.length) { toast("Не нашёл подходящих треков — добавь музыку в избранное", { error: true }); return; }
-    await player.playList(queue, 0, { type: "mood", id, label: `Настроение · ${mood.label}` });
-    toast(`${mood.label}: ${fromLibrary} из твоей музыки${discovered ? `, ${discovered} новых` : ""}. Звук настроен под настроение.`);
-    api.prefSet("lastMood", id);
+    const { queue } = await buildMoodQueue(mood);
+    if (!queue.length) { toast("Не нашёл подходящих треков", { error: true }); return; }
+    await player.playList(queue, 0, { type: "mood", id, label: mood.label });
   } finally {
     el?.classList.remove("loading");
   }
 }
 
-async function mood() {
-  const last = await api.prefGet("lastMood", null);
-  view.innerHTML = `<div class="page">
-    <h1>Какое настроение?</h1>
-    <p class="lead">Выбери — подберу треки из твоей музыки (и найду новые, если своих мало) и настрою 3D-сцену: комнату, движение, Slowed и Reverb.</p>
-    <div class="mood-grid">${MOODS.map((m) => moodCard(m, m.id === last ? "last" : "")).join("")}</div>
-  </div>`;
-  wireMoodCards(view);
+/* ───── my wave ───── */
+
+const SPARK = `<svg viewBox="0 0 48 48" class="wave-ico"><defs><linearGradient id="gS" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe27a"/><stop offset="1" stop-color="#f5a623"/></linearGradient></defs><path d="M24 3c1.8 10.6 5.8 16.6 21 21-15.2 4.4-19.2 10.4-21 21-1.8-10.6-5.8-16.6-21-21C18.2 19.6 22.2 13.6 24 3z" fill="url(#gS)"/></svg>`;
+const BOLT = `<svg viewBox="0 0 48 48" class="wave-ico"><defs><linearGradient id="gB" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b6ff5c"/><stop offset="1" stop-color="#1fb85a"/></linearGradient></defs><path d="M29 2 8 27h13l-4 19 23-27H27z" fill="url(#gB)"/><path d="M29 2 8 27h4l17-22z" fill="#fff" opacity=".25"/></svg>`;
+const CHAR_ICON = { favorite: `<img class="wave-ico" src="img/liked@512.png" alt="" />`, discover: SPARK, popular: BOLT };
+
+async function wave() {
+  const state = await loadWave();
+  const render = () => {
+    const pick = (group, id) => (group === "activity" ? state.activity === id : !state.activity && state[group] === id);
+    view.innerHTML = `
+      <div class="page wave-page">
+        <div class="wave-hero">
+          <div class="wave-orb ${player.context?.type === "wave" && player.playing ? "live" : ""}"><i></i><i></i><i></i></div>
+          <div>
+            <h1>Моя волна</h1>
+            <p class="wave-sum">${JSON.stringify(state) === JSON.stringify(DEFAULT_WAVE) ? "Подбирается по тому, что ты слушаешь" : esc(describe(state))}</p>
+            <div class="action-row">${playBtn(player.context?.type === "wave" ? "Новая волна" : "Слушать")}${JSON.stringify(state) !== JSON.stringify(DEFAULT_WAVE) ? `<button class="btn ghost" data-act="reset">Сбросить</button>` : ""}</div>
+          </div>
+        </div>
+        <div class="wave-panel">
+          <h3>По занятию</h3>
+          <div class="wchips">${ACTIVITIES.map((a) => `<button class="wchip ${pick("activity", a.id) ? "active" : ""}" data-g="activity" data-v="${a.id}">${a.label}</button>`).join("")}</div>
+          <h3>По характеру</h3>
+          <div class="wcards">${CHARACTER.map((c) => `<button class="wcard ${pick("diversity", c.id) ? "active" : ""}" data-g="diversity" data-v="${c.id}">${CHAR_ICON[c.id]}<b>${c.label}</b></button>`).join("")}</div>
+          <h3>По настроению</h3>
+          <div class="wmoods">${MOOD.map((m) => `<button class="wmood ${pick("moodEnergy", m.id) ? "active" : ""}" data-g="moodEnergy" data-v="${m.id}"><span style="--a:${m.colors[0]};--b:${m.colors[1]}"></span><b>${m.label}</b></button>`).join("")}</div>
+          <h3>По языку</h3>
+          <div class="wchips">${LANGUAGE.map((l) => `<button class="wchip ${pick("language", l.id) ? "active" : ""}" data-g="language" data-v="${l.id}">${l.label}</button>`).join("")}</div>
+        </div>
+      </div>`;
+    $$("[data-g]", view).forEach((el) => el.addEventListener("click", () => {
+      const { g, v } = el.dataset;
+      if (g === "activity") state.activity = state.activity === v ? null : v;
+      else {
+        state.activity = null;
+        const fallback = DEFAULT_WAVE[g];
+        state[g] = state[g] === v ? fallback : v;
+      }
+      render();
+      go();
+    }));
+    $('[data-act="play"]', view).addEventListener("click", go);
+    $('[data-act="reset"]', view)?.addEventListener("click", () => { Object.assign(state, DEFAULT_WAVE); render(); go(); });
+  };
+  const go = async () => {
+    const button = $('[data-act="play"]', view);
+    button?.classList.add("loading");
+    try { await startWave({ ...state }); render(); } catch (error) { toast(String(error.message || error), { error: true }); } finally { button?.classList.remove("loading"); }
+  };
+  render();
 }
 
 /* ───── settings ───── */
 
-async function settings() {
-  view.innerHTML = `<div class="page narrow"><h1>Настройки</h1><div id="settingsBody"><div class="skeleton-list">${"<div></div>".repeat(4)}</div></div></div>`;
+async function settings({ focus } = {}) {
+  view.innerHTML = `<div class="page narrow"><h1>Настройки</h1><div id="settingsBody"></div></div>`;
   const [accounts, prep] = await Promise.all([api.accounts().catch(() => ({})), api.prepStatus().catch(() => null)]);
   const ya = accounts.yandex || {};
   const s = player.settings;
   $("#settingsBody").innerHTML = `
+    <h2 class="set-h">Звук</h2>
     <section class="card">
-      <div class="card-head"><span class="src src-yandex big" style="--c:${PROVIDERS.yandex.color}">Я</span><div><b>Яндекс Музыка</b><small>${ya.connected ? `Вход выполнен: ${esc(ya.login)}${ya.plus ? " · Плюс" : " · без Плюса — полные треки недоступны"}` : "Поиск работает и так. Войди, чтобы слушать полные треки и получать тексты."}</small></div>
+      <label class="switch-row first"><span>3D-звук</span><input type="checkbox" id="setSpatial" ${s.spatial ? "checked" : ""} /></label>
+      <label class="switch-row"><span>Наушники<small>Выключи для колонок</small></span><input type="checkbox" id="setHeadphone" ${s.headphone ? "checked" : ""} /></label>
+    </section>
+    <section class="card" id="eqCard">
+      <div class="card-head"><div><b>Эквалайзер</b></div><button class="switch ${player.eq.some((g) => g) ? "on" : ""}" id="eqOn" aria-label="Эквалайзер"></button></div>
+      <div class="chips eq-presets">${EQ_PRESETS.map((p) => `<button class="chip" data-eq="${p.id}">${p.label}</button>`).join("")}</div>
+      <div class="eq">${USER_EQ_BANDS.map((f, i) => `<label><output>${fmtDb(player.eq[i])}</output><input type="range" min="-12" max="12" step="0.5" value="${player.eq[i]}" data-band="${i}" orient="vertical" /><span>${f >= 1000 ? `${f / 1000}k` : f}</span></label>`).join("")}</div>
+    </section>
+
+    <h2 class="set-h">Сервисы</h2>
+    <section class="card">
+      <div class="card-head"><span class="src src-yandex big" style="--c:${PROVIDERS.yandex.color}">Я</span><div><b>Яндекс Музыка</b><small>${ya.connected ? `${esc(ya.login)}${ya.plus ? " · Плюс" : ""}` : "Полные треки, тексты, Моя волна"}</small></div>
       ${ya.connected ? `<button class="btn ghost" id="yaLikes">Забрать лайки</button><button class="btn ghost" id="yaOut">Выйти</button>` : `<button class="btn primary" id="yaIn">Войти</button>`}</div>
-      ${ya.error ? `<div class="note warn">${esc(ya.error)} — войди заново.</div>` : ""}
-      <p class="hint">Откроется официальная страница входа Яндекса. Пароль вводится только там — приложение получает лишь токен доступа и хранит его у тебя на компьютере.</p>
     </section>
     <section class="card">
-      <div class="card-head"><span class="src src-soundcloud big" style="--c:${PROVIDERS.soundcloud.color}">SC</span><div><b>SoundCloud</b><small>Подключён автоматически. Треки, которые авторы выложили целиком, слушаются полностью.</small></div><span class="badge ok">✓</span></div>
+      <div class="card-head"><span class="src src-soundcloud big" style="--c:${PROVIDERS.soundcloud.color}">SC</span><div><b>SoundCloud</b><small>Подключён</small></div></div>
     </section>
     <section class="card">
-      <div class="card-head"><span class="src src-spotify big" style="--c:${PROVIDERS.spotify.color}">S</span><div><b>Spotify</b><small>${accounts.spotify?.configured ? "Подключён: поиск, обложки, информация об артистах." : "Необязательно. Даёт поиск по каталогу Spotify и данные об артистах. Само аудио Spotify защищено — трек будет взят с другой площадки."}</small></div></div>
-      <details ${accounts.spotify?.configured ? "" : "open"}><summary>Ключи разработчика</summary>
-        <p class="hint">Создай приложение на developer.spotify.com/dashboard (бесплатно, 1 минута) и вставь Client ID и Client Secret.</p>
+      <div class="card-head"><span class="src src-spotify big" style="--c:${PROVIDERS.spotify.color}">S</span><div><b>Spotify</b><small>${accounts.spotify?.configured ? "Подключён · только поиск" : "Только поиск, нужен ключ разработчика"}</small></div></div>
+      <details><summary>Ключи</summary>
         <div class="form-row"><input id="spId" placeholder="Client ID" autocomplete="off" spellcheck="false" /><input id="spSecret" placeholder="Client Secret" type="password" autocomplete="off" /><button class="btn" id="spSave">Сохранить</button></div>
       </details>
     </section>
+
+    <h2 class="set-h">3D-библиотека</h2>
     <section class="card">
-      <div class="card-head"><span class="ai-dot ${prep?.ai ? "on" : ""}"></span><div><b>3D-подготовка</b><small>${prep ? `${prep.ready} из ${prep.total} треков готовы в 3D${prep.pending ? `, ещё ${prep.pending} в работе` : ""}.` : ""} ${prep?.ai ? "Разделение на стемы идёт, когда музыка на паузе." : "AI-разделение не установлено — треки играют в 3D без разделения на стемы."}</small></div>${prep?.ai ? "" : `<button class="btn primary" id="installAi">Установить (~1 ГБ)</button>`}<button class="btn ghost" id="retry">Повторить ошибки</button></div>
+      <div class="card-head"><span class="ai-dot ${prep?.ai ? "on" : ""}"></span><div><b>${prep ? `${prep.ready} из ${prep.total} готовы` : "—"}</b><small>${prep?.ai ? "Стемы готовятся, когда музыка на паузе" : "Разделение на стемы не установлено"}</small></div>
+      ${prep?.ai ? "" : `<button class="btn primary" id="installAi">Установить · 1 ГБ</button>`}<button class="btn ghost" id="retry">Повторить ошибки</button></div>
       <p class="hint" id="aiProgress" hidden></p>
-    </section>
-    <section class="card">
-      <div class="card-head"><div><b>Звук</b><small>Для настоящего 3D нужны наушники.</small></div></div>
-      <label class="switch-row"><span>3D-звук<small>Бинауральная сцена HRTF</small></span><input type="checkbox" id="setSpatial" ${s.spatial ? "checked" : ""} /></label>
-      <label class="switch-row"><span>Режим наушников<small>Выключи, если слушаешь через колонки</small></span><input type="checkbox" id="setHeadphone" ${s.headphone ? "checked" : ""} /></label>
-      <label class="switch-row"><span>Автостиль<small>Определять жанр и подбирать сцену для каждого трека</small></span><input type="checkbox" id="setAuto" ${s.autoStyle ? "checked" : ""} /></label>
     </section>`;
   $("#yaIn")?.addEventListener("click", () => api.yandexLogin());
-  $("#yaLikes")?.addEventListener("click", () => window.nearfield.importLikes());
   $("#yaOut")?.addEventListener("click", async () => { await api.yandexLogout(); settings(); });
-  $("#spSave").addEventListener("click", async () => { await api.spotifyKeys($("#spId").value, $("#spSecret").value); toast("Spotify сохранён"); settings(); });
+  $("#yaLikes")?.addEventListener("click", () => window.nearfield.syncLikes({ manual: true }));
+  $("#spSave").addEventListener("click", async () => { await api.spotifyKeys($("#spId").value, $("#spSecret").value); toast("Сохранено"); settings(); });
+  $("#retry").addEventListener("click", async () => { await api.retryFailed(); toast("Повторю"); });
   $("#installAi")?.addEventListener("click", async (e) => {
     const button = e.currentTarget; button.disabled = true; button.textContent = "Ставлю…";
     const progress = $("#aiProgress"); progress.hidden = false;
     const stop = await listen("ai-install", ({ text }) => { progress.textContent = text; });
-    try { await api.installAi(); toast("3D-разделение установлено — начинаю готовить треки"); settings(); }
-    catch (error) { progress.textContent = `Не получилось: ${error}`; button.disabled = false; button.textContent = "Повторить"; }
+    try { await api.installAi(); toast("Установлено"); settings(); }
+    catch (error) { progress.textContent = String(error); button.disabled = false; button.textContent = "Повторить"; }
     finally { stop(); }
   });
-  $("#retry").addEventListener("click", async () => { await api.retryFailed(); toast("Повторю загрузку и разбор"); });
-  $("#setSpatial").addEventListener("change", (e) => player.apply({ spatial: e.target.checked }, { manual: false }));
-  $("#setHeadphone").addEventListener("change", (e) => player.apply({ headphone: e.target.checked }, { manual: false }));
-  $("#setAuto").addEventListener("change", (e) => player.chooseStyle(e.target.checked ? "auto" : player.settings.style || "pop"));
+  $("#setSpatial").addEventListener("change", (e) => player.setGlobal({ spatial: e.target.checked }));
+  $("#setHeadphone").addEventListener("change", (e) => player.setGlobal({ headphone: e.target.checked }));
+  wireEq();
+  if (focus === "eq") $("#eqCard").scrollIntoView({ block: "center" });
 }
 
-const PAGES = { home, search, artist, album, favorites, playlist, mood, settings };
+const fmtDb = (g) => (g > 0 ? `+${g}` : `${g}`);
+
+function wireEq() {
+  const inputs = $$(".eq input", view);
+  const sync = () => {
+    inputs.forEach((input, i) => { input.value = player.eq[i]; input.previousElementSibling.textContent = fmtDb(player.eq[i]); });
+    $("#eqOn").classList.toggle("on", player.eq.some((g) => g));
+    $$("[data-eq]", view).forEach((b) => b.classList.toggle("active", EQ_PRESETS.find((p) => p.id === b.dataset.eq).gains.every((g, i) => g === player.eq[i])));
+  };
+  inputs.forEach((input) => input.addEventListener("input", () => {
+    const gains = player.eq.slice(); gains[Number(input.dataset.band)] = Number(input.value);
+    player.setEq(gains); sync();
+  }));
+  $$("[data-eq]", view).forEach((b) => b.addEventListener("click", () => { player.setEq(EQ_PRESETS.find((p) => p.id === b.dataset.eq).gains); sync(); }));
+  $("#eqOn").addEventListener("click", () => { player.setEq(player.eq.some((g) => g) ? EQ_PRESETS[0].gains : EQ_PRESETS[1].gains); sync(); });
+  sync();
+}
+
+const PAGES = { home, search, artist, album, favorites, playlist, wave, mood: wave, settings };
 
 /* ───── sidebar playlists ───── */
 
 export function renderSidePlaylists() {
   const root = $("#sidePlaylists");
   const lists = playlistsCache.list;
-  root.innerHTML = lists.length
-    ? lists.map((p) => `<button class="side-playlist ${current?.name === "playlist" && current.params.id === p.id ? "active" : ""}" data-id="${p.id}">${collage(p.covers, "xs")}<span><b>${esc(p.name)}</b><small>${p.count} ${plural(p.count, "трек", "трека", "треков")}</small></span></button>`).join("")
-    : `<p class="side-empty">Создай первый плейлист кнопкой +</p>`;
-  $$(".side-playlist", root).forEach((el) => el.addEventListener("click", () => navigate("playlist", { id: Number(el.dataset.id) })));
+  root.innerHTML = `<button class="side-playlist ${current?.name === "favorites" ? "active" : ""}" data-fav>${LIKED_ART("xs")}<span><b>Избранное</b><small>Плейлист</small></span></button>`
+    + lists.map((p) => `<button class="side-playlist ${current?.name === "playlist" && current.params.id === p.id ? "active" : ""}" data-id="${p.id}">${collage(p.covers, "xs")}<span><b>${esc(p.name)}</b><small>${p.count} ${plural(p.count, "трек", "трека", "треков")}</small></span></button>`).join("");
+  $("[data-fav]", root).addEventListener("click", () => navigate("favorites"));
+  $$(".side-playlist[data-id]", root).forEach((el) => el.addEventListener("click", () => navigate("playlist", { id: Number(el.dataset.id) })));
 }
 
 document.addEventListener("playlists-changed", renderSidePlaylists);

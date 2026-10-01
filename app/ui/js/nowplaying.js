@@ -1,33 +1,45 @@
-/* Full-screen player: cover + live 3D stage, synced lyrics, scene controls, queue, immersive mode. */
+/* Full-window player: cover + live 3D stage, controls, synced lyrics, this track's sound, queue. */
 
 import { api } from "./api.js";
 import { lineIndexAt, parseLrc } from "../engine/lyrics.js";
-import { EXPERIENCES, findRoom, MODES, ROOMS } from "../engine/presets.js";
-import { findStyle, STYLES } from "../engine/style.js";
+import { AMBIENCES, findRoom, MODES, ROOMS } from "../engine/presets.js";
 import { StageView } from "../engine/visual.js";
-import { findMood } from "./moods.js";
 import { player } from "./player.js";
+import { ROOM_FIT, SCENE_PRESETS, SPEEDS, STYLE_SCENES } from "./scenes.js";
 import { library, toggleFavorite } from "./tracks.js";
 import { $, $$, artistNames, cover, esc, fmtTime, ICON } from "./ui.js";
 
 const els = {
   np: $("#np"), bg: $("#npBg"), cover: $("#npCover"), title: $("#npTitle"), artist: $("#npArtist"), heart: $("#npHeart"),
-  tags: $("#npTags"), context: $("#npContext"), lyrics: $("#lyrics"), scene: $("#scenePanel"), queue: $("#queuePanel"),
-  immersive: $("#immersive"), immLyric: $("#immLyric"), immTitle: $("#immTitle"), immMode: $("#immMode"),
+  context: $("#npContext"), lyrics: $("#lyrics"), sound: $("#soundPanel"), queue: $("#queuePanel"),
+  seek: $("#npSeek"), cur: $("#npCur"), dur: $("#npDur"), badge: $("#npBadge"), play: $("#npPlay"),
+  shuffle: $("#npShuffle"), repeat: $("#npRepeat"), volume: $("#npVolume"),
+  immersive: $("#immersive"), immLyric: $("#immLyric"), immMode: $("#immMode"),
 };
 const stage = new StageView($("#stageCanvas"));
 const immersiveStage = new StageView($("#immersiveCanvas"), { immersive: true });
-const lyricsState = { lines: [], synced: false, index: -2, trackId: null };
+const lyricsState = { lines: [], index: -2, trackId: null };
 let navigate = () => {};
 let tab = "lyrics";
-let simpleScene = true;
+let fine = false;
 
 export const nowPlaying = {
   get open() { return !els.np.hidden; },
   get immersive() { return !els.immersive.hidden; },
   setNavigator(fn) { navigate = fn; },
-  show() { els.np.hidden = false; requestAnimationFrame(() => els.np.classList.add("in")); renderAll(); },
-  hide() { els.np.classList.remove("in"); setTimeout(() => { els.np.hidden = true; }, 260); },
+  show(withTab) {
+    if (!player.track) return;
+    els.np.hidden = false;
+    document.body.classList.add("np-open");
+    requestAnimationFrame(() => els.np.classList.add("in"));
+    if (withTab) setTab(withTab); else renderAll();
+  },
+  hide() {
+    if (els.np.hidden) return;
+    els.np.classList.remove("in");
+    document.body.classList.remove("np-open");
+    setTimeout(() => { if (!els.np.classList.contains("in")) els.np.hidden = true; }, 240);
+  },
   toggle() { if (this.open) this.hide(); else this.show(); },
   setImmersive(on) {
     els.immersive.hidden = !on;
@@ -36,7 +48,9 @@ export const nowPlaying = {
   },
 };
 
-/* ───── header / meta ───── */
+/* ───── meta + controls ───── */
+
+const CONTEXT_LABEL = { favorites: "Избранное", playlist: "Плейлист", mood: "Настроение", artist: "Артист", album: "Альбом", search: "Поиск", history: "Недавнее" };
 
 function renderMeta() {
   const track = player.track;
@@ -46,17 +60,19 @@ function renderMeta() {
   els.title.textContent = track.title;
   els.artist.textContent = artistNames(track);
   els.heart.classList.toggle("on", Boolean(library.get(track.id)?.favorite));
-  els.context.textContent = player.context?.label || "";
-  els.immTitle.textContent = `${artistNames(track)} — ${track.title}`;
+  const ctx = player.context;
+  els.context.innerHTML = ctx ? `<small>${CONTEXT_LABEL[ctx.type] || "Играет"}</small><b>${esc(ctx.label.replace(/^(Настроение · |Поиск: )/, ""))}</b>` : "";
   const item = player.current;
-  const tags = [];
-  if (item?.preview) tags.push(`<span class="tag warn">Превью 30 сек — войди в Яндекс Музыку</span>`);
-  else if (item?.stems) tags.push(`<span class="tag ok">Полный 3D · 4 стема</span>`);
-  else if (item) tags.push(`<span class="tag" title="Трек ещё не разделён на стемы: в избранном это сделается само">3D без стемов</span>`);
-  if (player.detected) tags.push(`<span class="tag">Стиль: ${findStyle(player.detected.id).label}</span>`);
-  if (player.engine.analysis) tags.push(`<span class="tag">${Math.round(player.engine.analysis.bpm * player.engine.rate)} BPM</span>`);
-  if (track.album) tags.push(`<span class="tag">${esc(track.album)}${track.year ? ` · ${track.year}` : ""}</span>`);
-  els.tags.innerHTML = tags.join("");
+  els.badge.textContent = item?.preview ? "превью 30 сек" : item && !item.stems ? "3D без стемов" : "";
+  els.badge.title = item && !item.stems && !item.preview ? "Трек ещё не разделён на стемы — после этого 3D станет полным" : "";
+}
+
+function renderControls() {
+  els.play.classList.toggle("playing", player.playing);
+  els.play.classList.toggle("loading", Boolean(player.loadingTrack));
+  els.shuffle.classList.toggle("on", player.shuffle);
+  els.repeat.classList.toggle("on", player.repeat !== "off");
+  els.repeat.classList.toggle("one", player.repeat === "one");
 }
 
 els.artist.addEventListener("click", () => {
@@ -64,6 +80,18 @@ els.artist.addEventListener("click", () => {
   if (id) { nowPlaying.hide(); navigate("artist", { id }); }
 });
 els.heart.addEventListener("click", async () => { if (player.track) { await toggleFavorite(player.track); renderMeta(); } });
+els.play.addEventListener("click", () => player.toggle());
+$("#npPrev").addEventListener("click", () => player.prev());
+$("#npNext").addEventListener("click", () => player.next());
+els.shuffle.addEventListener("click", () => player.setShuffle(!player.shuffle));
+els.repeat.addEventListener("click", () => player.cycleRepeat());
+els.seek.addEventListener("input", () => {
+  const duration = player.engine.duration || player.track?.duration || 0;
+  player.engine.seek(Number(els.seek.value) / 1000 * duration);
+  paintRange(els.seek);
+});
+els.volume.addEventListener("input", () => { player.setVolume(Number(els.volume.value) / 100); paintRange(els.volume); document.dispatchEvent(new CustomEvent("volume-changed")); });
+export function syncVolume() { els.volume.value = Math.round(player.volume * 100); paintRange(els.volume); }
 
 /* ───── lyrics ───── */
 
@@ -71,21 +99,17 @@ async function loadLyrics() {
   const track = player.track;
   if (!track || lyricsState.trackId === track.id) return;
   lyricsState.trackId = track.id; lyricsState.lines = []; lyricsState.index = -2;
-  els.lyrics.innerHTML = `<div class="lyrics-note">Ищу текст…</div>`;
+  els.lyrics.innerHTML = `<div class="lyrics-note">…</div>`;
   els.immLyric.textContent = "";
   const result = await api.lyrics(track).catch(() => null);
   if (lyricsState.trackId !== track.id) return;
-  if (!result) {
-    els.lyrics.innerHTML = `<div class="lyrics-note"><b>Текста нет</b><span>Ни площадка трека, ни открытая база LRCLIB его не знают.</span></div>`;
-    return;
-  }
-  lyricsState.synced = result.synced;
+  if (!result) { els.lyrics.innerHTML = `<div class="lyrics-note"><b>Текста нет</b></div>`; return; }
   if (result.synced) {
     lyricsState.lines = parseLrc(result.text);
-    els.lyrics.innerHTML = lyricsState.lines.map((line, i) => `<p data-i="${i}" data-t="${line.time}">${esc(line.text)}</p>`).join("") + `<div class="lyrics-src">Текст: ${esc(result.source)}</div>`;
+    els.lyrics.innerHTML = lyricsState.lines.map((line, i) => `<p data-i="${i}" data-t="${line.time}">${esc(line.text) || "♪"}</p>`).join("") + `<div class="lyrics-src">${esc(result.source)}</div>`;
     $$("p", els.lyrics).forEach((p) => p.addEventListener("click", () => player.engine.seek(Number(p.dataset.t))));
   } else {
-    els.lyrics.innerHTML = `<div class="lyrics-plain">${esc(result.text).replace(/\n/g, "<br>")}</div><div class="lyrics-src">Текст: ${esc(result.source)} · без синхронизации</div>`;
+    els.lyrics.innerHTML = `<div class="lyrics-plain">${esc(result.text).replace(/\n/g, "<br>")}</div><div class="lyrics-src">${esc(result.source)}</div>`;
   }
 }
 
@@ -102,70 +126,104 @@ function updateLyrics(time) {
   if (active) els.lyrics.scrollTo({ top: active.offsetTop - els.lyrics.clientHeight * 0.38, behavior: "smooth" });
 }
 
-/* ───── scene ───── */
+/* ───── sound of this track ───── */
 
-function chipRow(items, active, attr) {
-  return items.map((item) => `<button class="chip ${String(item.value) === String(active) ? "active" : ""}" data-${attr}="${item.value}" title="${esc(item.hint || "")}">${esc(item.label)}</button>`).join("");
-}
+const chips = (items, active, attr) => items.map((item) => `<button class="chip ${String(item.value) === String(active) ? "active" : ""}" data-${attr}="${item.value}" ${item.hint ? `title="${esc(item.hint)}"` : ""}>${esc(item.label)}</button>`).join("");
 
-const SLIDERS = [
+const FINE = [
   { key: "distance", label: "Дистанция", min: 0, max: 100, to: (v) => +(0.6 * 20 ** (v / 100)).toFixed(2), from: (s) => Math.round(Math.log(s / 0.6) / Math.log(20) * 100), fmt: (s) => `${s < 10 ? s.toFixed(1) : Math.round(s)} м` },
   { key: "motion", label: "Движение", min: 0, max: 100, to: (v) => v / 100, from: (s) => Math.round(s * 100), fmt: (s) => `${Math.round(s * 100)}%` },
-  { key: "roomAmt", label: "Комната", min: 0, max: 200, to: (v) => v / 100, from: (s) => Math.round(s * 100), fmt: (s) => `${Math.round(s * 100)}%` },
+  { key: "roomAmt", label: "Отражения", min: 0, max: 200, to: (v) => v / 100, from: (s) => Math.round(s * 100), fmt: (s) => `${Math.round(s * 100)}%` },
   { key: "bass", label: "Бас", min: 0, max: 16, to: (v) => v / 2, from: (s) => Math.round(s * 2), fmt: (s) => `+${s.toFixed(1)} dB` },
-  { key: "width", label: "Ширина", min: 60, max: 160, to: (v) => v / 100, from: (s) => Math.round(s * 100), fmt: (s) => `${Math.round(s * 100)}%`, pro: true },
-  { key: "cue", label: "3D-чёткость", min: 0, max: 100, to: (v) => v / 100, from: (s) => Math.round(s * 100), fmt: (s) => `${Math.round(s * 100)}%`, pro: true },
-  { key: "slowRate", label: "Скорость Slowed", min: 70, max: 95, to: (v) => v / 100, from: (s) => Math.round(s * 100), fmt: (s) => `${Math.round(s * 100)}%`, pro: true },
-  { key: "fxAmount", label: "Сила Reverb", min: 0, max: 100, to: (v) => v / 100, from: (s) => Math.round(s * 100), fmt: (s) => `${Math.round(s * 100)}%`, pro: true },
+  { key: "width", label: "Ширина", min: 60, max: 160, to: (v) => v / 100, from: (s) => Math.round(s * 100), fmt: (s) => `${Math.round(s * 100)}%` },
+  { key: "cue", label: "Чёткость 3D", min: 0, max: 100, to: (v) => v / 100, from: (s) => Math.round(s * 100), fmt: (s) => `${Math.round(s * 100)}%` },
 ];
 
-function renderScene() {
+function slider({ key, label, min, max, value, fmt, step = 1 }) {
+  return `<label class="slider"><span>${label}<output>${fmt}</output></span><input type="range" min="${min}" max="${max}" step="${step}" value="${value}" data-key="${key}" /></label>`;
+}
+
+function speedKind(rate) { return rate < 1 ? "slowed" : rate > 1 ? "up" : "normal"; }
+
+function renderSound() {
   const s = player.settings;
-  const mood = player.mood;
-  const detected = player.detected;
-  const styleNote = mood
-    ? `Сцену задаёт настроение «${mood.label}»`
-    : detected ? `Похоже на «${findStyle(detected.id).label}» · ${Math.round(detected.confidence * 100)}%${detected.vocals ? " · есть вокал" : " · без вокала"}` : player.current?.stems ? "определяю стиль…" : "стиль определится после 3D-подготовки";
-  els.scene.innerHTML = `
-    <div class="scene-block">
-      <div class="fx-row">
-        <button class="fx ${s.spatial ? "on" : ""}" data-fx="spatial"><b>3D</b><small>${s.spatial ? "вкл" : "выкл"}</small></button>
-        <button class="fx ${s.rate < 1 ? "on" : ""}" data-fx="slowed"><b>Slowed</b><small>${s.rate < 1 ? `${Math.round(s.rate * 100)}%` : "выкл"}</small></button>
-        <button class="fx ${s.fxReverb ? "on" : ""}" data-fx="reverb"><b>Reverb</b><small>${s.fxReverb ? "вкл" : "выкл"}</small></button>
+  const auto = player.soundMode === "auto";
+  const kind = speedKind(s.rate);
+  const preset = SCENE_PRESETS.find((p) => Object.entries(p.scene).every(([k, v]) => s[k] === v));
+  const fit = (id) => ROOM_FIT[id] || "";
+  const rooms = ROOMS.map((r) => ({ value: r.id, label: r.label, hint: fit(r.id) }));
+  els.sound.innerHTML = `
+    <div class="sound-head">
+      <div><b>${auto ? "Автоматически" : "Свой звук трека"}</b><small>${auto ? `под ${esc(player.autoLabel())}` : "запомнен для этого трека"}</small></div>
+      ${auto ? `<span class="pill-on">Авто</span>` : `<button class="btn ghost small" data-act="auto">Вернуть авто</button>`}
+    </div>
+
+    <div class="sblock">
+      <div class="slabel">Скорость</div>
+      <div class="seg wide">
+        <button data-speed="slowed" class="${kind === "slowed" ? "active" : ""}">Slowed</button>
+        <button data-speed="normal" class="${kind === "normal" ? "active" : ""}">Обычная</button>
+        <button data-speed="up" class="${kind === "up" ? "active" : ""}">Speed up</button>
       </div>
+      ${kind === "normal" ? "" : `<div class="chips">${SPEEDS[kind].map((r) => `<button class="chip ${s.rate === r ? "active" : ""}" data-rate="${r}">${Math.round(r * 100)}%</button>`).join("")}</div>`}
     </div>
-    <div class="scene-block">
-      <div class="block-head"><b>Стиль</b><small>${styleNote}</small></div>
-      <div class="chips">${chipRow([{ value: "auto", label: "Авто", hint: "свой стиль для каждого трека" }, ...STYLES.map((st) => ({ value: st.id, label: st.label, hint: st.hint }))], s.autoStyle ? "auto" : s.style, "style")}</div>
+
+    <div class="sblock">
+      <div class="slabel">Reverb <button class="switch ${s.fxReverb ? "on" : ""}" data-act="reverb" aria-label="Reverb"></button></div>
+      ${s.fxReverb ? slider({ key: "fxAmount", label: "Сила", min: 0, max: 100, value: Math.round(s.fxAmount * 100), fmt: `${Math.round(s.fxAmount * 100)}%` }) : ""}
     </div>
-    <div class="scene-block">
-      <div class="block-head"><b>Сценарии</b><small>одно нажатие — целая сцена</small></div>
-      <div class="exp-grid">${EXPERIENCES.map((exp) => `<button class="exp ${s.experience === exp.id ? "active" : ""}" data-exp="${exp.id}"><b>${esc(exp.title)}</b><small>${esc(exp.sub)}</small></button>`).join("")}</div>
+
+    <div class="sblock">
+      <div class="slabel">Сцена</div>
+      <div class="chips">${SCENE_PRESETS.map((p) => `<button class="chip ${preset?.id === p.id ? "active" : ""}" data-preset="${p.id}">${p.label}</button>`).join("")}</div>
     </div>
-    <div class="scene-block">
-      <div class="block-head"><b>Настройка</b><div class="seg"><button class="${simpleScene ? "active" : ""}" data-ui="simple">Просто</button><button class="${simpleScene ? "" : "active"}" data-ui="pro">Тонко</button></div></div>
-      ${simpleScene ? "" : `<div class="sub-label">Движение</div><div class="chips">${chipRow(MODES.filter((m) => m.id !== "custom").map((m) => ({ value: m.id, label: m.label, hint: m.hint })), s.mode, "mode")}</div>`}
-      <div class="sub-label">Комната</div><div class="chips">${chipRow(ROOMS.map((r) => ({ value: r.id, label: r.label, hint: r.hint })), s.room, "room")}</div>
-      <div class="sliders">${SLIDERS.filter((sl) => !simpleScene || !sl.pro).map((sl) => `
-        <label class="slider"><span>${sl.label}<output>${sl.fmt(s[sl.key])}</output></span><input type="range" min="${sl.min}" max="${sl.max}" value="${sl.from(s[sl.key])}" data-key="${sl.key}" /></label>`).join("")}</div>
+
+    <div class="sblock">
+      <div class="slabel">Комната <small>${esc(findRoom(s.room).label)}${fit(s.room) ? ` · ${esc(fit(s.room))}` : ""}</small></div>
+      <div class="chips">${chips(rooms, s.room, "room")}</div>
+    </div>
+
+    <div class="sblock">
+      <div class="slabel">Атмосфера</div>
+      <div class="chips">${chips(AMBIENCES.map((a) => ({ value: a.id, label: a.label })), s.ambience, "amb")}</div>
+      ${s.ambience !== "none" ? slider({ key: "ambienceLevel", label: "Громкость", min: 0, max: 100, value: Math.round(s.ambienceLevel * 100), fmt: `${Math.round(s.ambienceLevel * 100)}%` }) : ""}
+    </div>
+
+    <button class="fine-toggle ${fine ? "open" : ""}" data-act="fine">Тонкая настройка <svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+    ${fine ? `<div class="sblock">
+      <div class="slabel">Движение</div>
+      <div class="chips">${chips(MODES.filter((m) => m.id !== "custom").map((m) => ({ value: m.id, label: m.label, hint: m.hint })), s.mode, "mode")}</div>
+      ${FINE.map((f) => slider({ key: f.key, label: f.label, min: f.min, max: f.max, value: f.from(s[f.key]), fmt: f.fmt(s[f.key]) })).join("")}
+    </div>` : ""}
+
+    <div class="sound-foot">
+      <button class="row-btn" data-act="spatial"><span>3D-звук</span><span class="switch ${s.spatial ? "on" : ""}"></span></button>
+      <button class="row-btn" data-act="eq"><span>Эквалайзер</span><em>›</em></button>
     </div>`;
-  $$("[data-fx]", els.scene).forEach((b) => b.addEventListener("click", () => {
-    const fx = b.dataset.fx;
-    if (fx === "spatial") player.toggleSpatial(); else if (fx === "slowed") player.toggleSlowed(); else player.toggleReverb();
-  }));
-  $$("[data-style]", els.scene).forEach((b) => b.addEventListener("click", () => { player.mood = null; player.chooseStyle(b.dataset.style); }));
-  $$("[data-exp]", els.scene).forEach((b) => b.addEventListener("click", () => { player.mood = null; player.applyExperience(EXPERIENCES.find((e) => e.id === b.dataset.exp)); }));
-  $$("[data-mode]", els.scene).forEach((b) => b.addEventListener("click", () => player.apply({ mode: b.dataset.mode })));
-  $$("[data-room]", els.scene).forEach((b) => b.addEventListener("click", () => player.apply({ room: b.dataset.room })));
-  $$("[data-ui]", els.scene).forEach((b) => b.addEventListener("click", () => { simpleScene = b.dataset.ui === "simple"; renderScene(); }));
-  $$("input[type=range]", els.scene).forEach((input) => {
-    const sl = SLIDERS.find((x) => x.key === input.dataset.key);
+
+  const on = (sel, fn) => $$(sel, els.sound).forEach((el) => el.addEventListener("click", () => fn(el)));
+  on('[data-act="auto"]', () => player.setAuto());
+  on("[data-speed]", (el) => {
+    const k = el.dataset.speed;
+    player.setSpeed(k === "normal" ? 1 : k === "slowed" ? 0.85 : 1.2);
+  });
+  on("[data-rate]", (el) => player.setSpeed(Number(el.dataset.rate)));
+  on('[data-act="reverb"]', () => player.toggleReverb());
+  on("[data-preset]", (el) => player.adjust(SCENE_PRESETS.find((p) => p.id === el.dataset.preset).scene, { transition: true }));
+  on("[data-room]", (el) => player.adjust({ room: el.dataset.room }));
+  on("[data-amb]", (el) => player.adjust({ ambience: el.dataset.amb }));
+  on("[data-mode]", (el) => player.adjust({ mode: el.dataset.mode }));
+  on('[data-act="fine"]', () => { fine = !fine; renderSound(); });
+  on('[data-act="spatial"]', () => player.toggleSpatial());
+  on('[data-act="eq"]', () => { nowPlaying.hide(); navigate("settings", { focus: "eq" }); });
+  $$("input[type=range]", els.sound).forEach((input) => {
     paintRange(input);
     input.addEventListener("input", () => {
-      const value = sl.to(Number(input.value));
-      const patch = sl.key === "slowRate" && player.settings.rate < 1 ? { slowRate: value, rate: value } : { [sl.key]: value };
-      player.apply(patch, { manual: !["slowRate", "fxAmount"].includes(sl.key) });
-      input.previousElementSibling.querySelector("output").textContent = sl.fmt(player.settings[sl.key]);
+      const key = input.dataset.key;
+      const f = FINE.find((x) => x.key === key);
+      const value = f ? f.to(Number(input.value)) : Number(input.value) / 100;
+      player.adjust({ [key]: value });
+      input.previousElementSibling.querySelector("output").textContent = f ? f.fmt(value) : `${Math.round(value * 100)}%`;
       paintRange(input);
     });
   });
@@ -179,18 +237,21 @@ export function paintRange(input) {
 /* ───── queue ───── */
 
 function renderQueue() {
-  const rows = player.queue.map((t, i) => `
-    <div class="qrow ${i === player.index ? "now" : i < player.index ? "past" : ""}" data-i="${i}">
-      ${cover(t.cover, "xs")}<span><b>${esc(t.title)}</b><small>${esc(artistNames(t))}</small></span><em>${fmtTime(t.duration)}</em>
-      ${i === player.index ? "" : `<button class="icon-btn small" data-rm="${i}" title="Убрать">${ICON.trash}</button>`}
-    </div>`).join("");
-  els.queue.innerHTML = `<div class="queue-head"><b>${esc(player.context?.label || "Очередь")}</b><small>${player.queue.length} треков</small></div>${rows || `<div class="empty-note">Очередь пуста</div>`}`;
+  const upcoming = player.queue.map((t, i) => ({ t, i })).filter(({ i }) => i > player.index);
+  const now = player.track;
+  els.queue.innerHTML = `
+    ${now ? `<div class="qsec">Сейчас</div>${qrow(now, player.index, "now")}` : ""}
+    <div class="qsec">Далее${upcoming.length ? ` · ${upcoming.length}` : ""}</div>
+    ${upcoming.map(({ t, i }) => qrow(t, i, "")).join("") || `<div class="empty-note">Дальше пусто</div>`}`;
   $$(".qrow", els.queue).forEach((row) => row.addEventListener("click", (e) => {
     const rm = e.target.closest("[data-rm]");
     if (rm) { e.stopPropagation(); player.removeFromQueue(Number(rm.dataset.rm)); return; }
-    player.playAt(Number(row.dataset.i));
+    if (!row.classList.contains("now")) player.playAt(Number(row.dataset.i));
   }));
-  els.queue.querySelector(".qrow.now")?.scrollIntoView({ block: "center" });
+}
+
+function qrow(t, i, cls) {
+  return `<div class="qrow ${cls}" data-i="${i}">${cover(t.cover, "xs")}<span><b>${esc(t.title)}</b><small>${esc(artistNames(t))}</small></span><em>${fmtTime(t.duration)}</em>${cls ? "<i></i>" : `<button class="icon-btn small" data-rm="${i}" title="Убрать">${ICON.trash}</button>`}</div>`;
 }
 
 /* ───── tabs ───── */
@@ -198,30 +259,32 @@ function renderQueue() {
 function setTab(name) {
   tab = name;
   $$("#npTabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
-  $$(".tab-panel").forEach((p) => { p.hidden = p.dataset.panel !== name; });
-  if (name === "scene") renderScene();
-  if (name === "queue") renderQueue();
+  $$("#np .tab-panel").forEach((p) => { p.hidden = p.dataset.panel !== name; });
+  renderAll();
   if (name === "lyrics") { lyricsState.index = -2; updateLyrics(player.engine.currentTime); }
 }
 $$("#npTabs button").forEach((b) => b.addEventListener("click", () => setTab(b.dataset.tab)));
-export const openSceneTab = () => { nowPlaying.show(); setTab("scene"); };
-export const openQueueTab = () => { nowPlaying.show(); setTab("queue"); };
+export const openSound = () => nowPlaying.show("sound");
+export const openQueue = () => nowPlaying.show("queue");
 
 function renderAll() {
   renderMeta();
+  renderControls();
   loadLyrics();
-  if (tab === "scene") renderScene();
+  if (tab === "sound") renderSound();
   if (tab === "queue") renderQueue();
 }
 
-player.on("track", () => { lyricsState.trackId = null; renderAll(); });
-player.on("analyzed", () => { renderMeta(); if (tab === "scene" && nowPlaying.open) renderScene(); });
+player.on("track", () => { lyricsState.trackId = null; if (nowPlaying.open) renderAll(); else loadLyrics(); });
+player.on("state", renderControls);
+player.on("loading", renderControls);
+player.on("analyzed", () => { if (nowPlaying.open) { renderMeta(); if (tab === "sound") renderSound(); } });
 player.on("settings", () => {
-  if (tab === "scene" && nowPlaying.open && !document.activeElement?.matches?.("#scenePanel input")) renderScene();
+  if (tab === "sound" && nowPlaying.open && !document.activeElement?.matches?.("#soundPanel input")) renderSound();
   const mode = MODES.find((m) => m.id === player.settings.mode);
-  els.immMode.textContent = `${mode?.label || ""} · ${findRoom(player.settings.room).label}${player.mood ? ` · ${findMood(player.mood.id).label}` : ""}`;
+  els.immMode.textContent = `${mode?.label || ""} · ${findRoom(player.settings.room).label}`;
 });
-player.on("queue", () => { if (tab === "queue" && nowPlaying.open) renderQueue(); });
+player.on("queue", () => { renderControls(); if (tab === "queue" && nowPlaying.open) renderQueue(); });
 
 $("#npClose").addEventListener("click", () => nowPlaying.hide());
 $("#npImmersive").addEventListener("click", () => nowPlaying.setImmersive(true));
@@ -235,9 +298,15 @@ export function drawFrame(now) {
   const time = engine.currentTime;
   updateLyrics(time);
   if (!nowPlaying.open && !nowPlaying.immersive) return;
+  if (nowPlaying.open) {
+    const duration = engine.duration || player.track?.duration || 0;
+    els.cur.textContent = fmtTime(time); els.dur.textContent = fmtTime(duration);
+    if (!els.seek.matches(":active") && duration) { els.seek.value = Math.round(time / duration * 1000); paintRange(els.seek); }
+  }
   const frame = { viz: engine.viz, energies: engine.energies, enabled: engine.stemEnabled, kick: engine.kick, view: "3d", editing: false, now };
   if (nowPlaying.open) stage.draw(frame);
   if (nowPlaying.immersive) immersiveStage.draw(frame);
-  const kick = engine.kick;
-  els.cover.style.transform = `scale(${1 + kick * 0.018})`;
+  els.cover.style.transform = `scale(${1 + engine.kick * 0.016})`;
 }
+
+export { STYLE_SCENES };

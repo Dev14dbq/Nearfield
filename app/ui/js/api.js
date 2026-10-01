@@ -34,6 +34,8 @@ export const api = {
   accounts: () => invoke("accounts"),
   yandexLogin: () => invoke("yandex_login"),
   importYandexLikes: () => invoke("import_yandex_likes"),
+  wave: (station, settings, after) => invoke("wave", { station, settings, after }),
+  waveFeedback: (station, batch, kind, track, played) => invoke("wave_feedback", { station, batch, kind, track, played }),
   yandexLogout: () => invoke("yandex_logout"),
   spotifyKeys: (id, secret) => invoke("spotify_keys", { id, secret }),
   prefGet: async (key, fallback = null) => {
