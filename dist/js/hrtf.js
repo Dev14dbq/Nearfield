@@ -27,7 +27,9 @@ function placePanner(panner, az, el) {
 // Renders a unit impulse through an HRTF panner for every direction, spaced `window` samples apart.
 async function impulseResponses(sampleRate, directions, window, attempts) {
   const rendered = await renderOffline(2, window * directions.length, sampleRate, (offline) => {
-    const impulse = offline.createBuffer(1, 1, sampleRate);
+    // WebKit's HRTF panner outputs silence for sources shorter than its 512-sample block, so the
+    // impulse sits at the start of a zero-padded buffer rather than a one-sample one.
+    const impulse = offline.createBuffer(1, 512, sampleRate);
     impulse.getChannelData(0)[0] = 1;
     directions.forEach(([az, el], i) => {
       const source = offline.createBufferSource(); source.buffer = impulse;
