@@ -16,11 +16,12 @@ def transcribe_faster(path: str, model_name: str) -> dict:
     from faster_whisper import WhisperModel
 
     model = WhisperModel(model_name, device="auto", compute_type="int8")
-    segments, info = model.transcribe(path, word_timestamps=True, vad_filter=True, beam_size=5)
+    segments, info = model.transcribe(path, word_timestamps=True, vad_filter=True, beam_size=5,
+                                      condition_on_previous_text=False)
     result = []
     for seg in segments:
-        # Whisper invents text over instrumental gaps; drop segments it is not sure contain speech.
-        if seg.no_speech_prob > 0.6 or not seg.text.strip():
+        # Sung vocals score a high no_speech_prob, so only drop a segment that is also decoded with low confidence.
+        if (seg.no_speech_prob > 0.6 and seg.avg_logprob < -1.0) or not seg.text.strip():
             continue
         result.append({
             "start": round(seg.start, 3), "end": round(seg.end, 3), "text": seg.text.strip(),
@@ -33,10 +34,10 @@ def transcribe_openai(path: str, model_name: str) -> dict:
     import whisper
 
     model = whisper.load_model(model_name)
-    output = model.transcribe(path, word_timestamps=True)
+    output = model.transcribe(path, word_timestamps=True, condition_on_previous_text=False)
     result = []
     for seg in output["segments"]:
-        if seg.get("no_speech_prob", 0) > 0.6 or not seg["text"].strip():
+        if (seg.get("no_speech_prob", 0) > 0.6 and seg.get("avg_logprob", 0) < -1.0) or not seg["text"].strip():
             continue
         result.append({
             "start": round(seg["start"], 3), "end": round(seg["end"], 3), "text": seg["text"].strip(),

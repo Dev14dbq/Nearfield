@@ -34,7 +34,7 @@ python3 server.py
 Для распознавания текста нужен Whisper в том же `.venv`, что и Demucs:
 
 ```bash
-.venv/bin/pip install faster-whisper
+uv pip install --python .venv/bin/python faster-whisper "av<16"
 # точнее, но медленнее: NEARFIELD_WHISPER=medium python3 server.py
 ```
 

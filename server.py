@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import cgi
 import hashlib
 import json
 import re
@@ -25,6 +24,31 @@ JOBS: dict[str, dict] = {}
 JOBS_LOCK = threading.Lock()
 MODEL_LOCK = threading.Semaphore(1)
 LYRICS_LOCK = threading.Semaphore(1)
+
+
+def parse_multipart_file(body: bytes, content_type: str, field: str = "file") -> tuple[str, memoryview] | None:
+    """Return (filename, content) of the `field` part of a multipart/form-data body (the cgi module is gone in 3.13+)."""
+    boundary_match = re.search(r'boundary=(?:"([^"]+)"|([^;\s]+))', content_type, re.IGNORECASE)
+    if not boundary_match:
+        return None
+    delimiter = b"--" + (boundary_match.group(1) or boundary_match.group(2)).encode("latin-1")
+    view = memoryview(body)
+    position = body.find(delimiter)
+    while position != -1:
+        header_start = position + len(delimiter)
+        if body[header_start:header_start + 2] == b"--":
+            break
+        header_end = body.find(b"\r\n\r\n", header_start)
+        content_end = body.find(b"\r\n" + delimiter, header_end + 4) if header_end != -1 else -1
+        if content_end == -1:
+            break
+        headers = body[header_start:header_end].decode("utf-8", errors="replace")
+        name = re.search(r'[;\s]name="((?:[^"\\]|\\.)*)"', headers)
+        if name and name.group(1) == field:
+            filename = re.search(r'filename="((?:[^"\\]|\\.)*)"', headers)
+            return (filename.group(1) if filename else ""), view[header_end + 4:content_end]
+        position = content_end + 2
+    return None
 
 
 def update_job(job_id: str, **values) -> None:
@@ -93,7 +117,7 @@ def transcribe(job_id: str, source: Path, target: Path) -> None:
         with LYRICS_LOCK:
             process = subprocess.run([str(PYTHON), str(ROOT / "lyrics_worker.py"), str(source), str(target)], cwd=ROOT, capture_output=True, text=True)
         if process.returncode == 3:
-            raise RuntimeError("Распознавание не установлено: .venv/bin/pip install faster-whisper")
+            raise RuntimeError("Распознавание не установлено: uv pip install --python .venv/bin/python faster-whisper "av<16"")
         if process.returncode:
             raise RuntimeError(process.stderr.strip()[-800:] or "Whisper завершился с ошибкой")
         update_job(job_id, state="done", message="Готово", lyrics=json.loads(target.read_text(encoding="utf-8")))
@@ -169,16 +193,13 @@ class NearfieldHandler(SimpleHTTPRequestHandler):
         if length <= 0 or length > 250 * 1024 * 1024:
             self.send_json({"error": "Файл пустой или больше 250 МБ"}, 413)
             return
-        form = cgi.FieldStorage(
-            fp=self.rfile,
-            headers=self.headers,
-            environ={"REQUEST_METHOD": "POST", "CONTENT_TYPE": self.headers.get("Content-Type", "")},
-        )
-        upload = form["file"] if "file" in form else None
-        if upload is None or not getattr(upload, "file", None):
+        body = self.rfile.read(length)
+        upload = parse_multipart_file(body, self.headers.get("Content-Type", ""))
+        if upload is None or not upload[1]:
             self.send_json({"error": "Аудиофайл не найден"}, 400)
             return
-        original = Path(upload.filename or "track.mp3")
+        filename, content = upload
+        original = Path(filename or "track.mp3")
         safe_stem = re.sub(r"[^\w .-]+", "_", original.stem, flags=re.UNICODE).strip()[:90] or "track"
         suffix = original.suffix.lower() if original.suffix.lower() in {".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg"} else ".audio"
         job_id = uuid.uuid4().hex[:12]
@@ -186,7 +207,7 @@ class NearfieldHandler(SimpleHTTPRequestHandler):
         upload_dir.mkdir(parents=True, exist_ok=True)
         source = upload_dir / f"{safe_stem}{suffix}"
         with source.open("wb") as target:
-            shutil.copyfileobj(upload.file, target)
+            target.write(content)
         with JOBS_LOCK:
             JOBS[job_id] = {"state": "queued", "message": "Трек в очереди"}
         threading.Thread(target=separate, args=(job_id, source, safe_stem), daemon=True).start()
