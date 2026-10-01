@@ -78,32 +78,65 @@ export async function startWave(state) {
   const station = stationOf(state);
   const { tracks, batch } = await api.wave(station, settingsOf(state), null);
   if (!tracks.length) throw new Error("Волна ничего не прислала, попробуй другие настройки");
-  session = { station, batch, fetching: false };
+  session = { station, batch, fetching: false, started: new Set() };
   api.waveFeedback(station, batch, "radioStarted", null, 0).catch(() => {});
   await player.playList(tracks, 0, { type: "wave", id: station, label: describe(state), scene: scene?.scene });
 }
 
-// Keeps the wave endless: when two tracks are left, the next batch is appended.
-player.on("track", async () => {
-  if (player.context?.type !== "wave" || !session || session.fetching) return;
-  if (player.index < player.queue.length - 2) return;
-  session.fetching = true;
+const yandexId = (track) => track?.sources?.find((s) => s.provider === "yandex")?.id || null;
+
+// After a restart the queue comes back from the saved session; the wave keeps going from there.
+function ensureSession() {
+  if (!session && player.context?.type === "wave" && player.context.id !== "local") session = { station: player.context.id, batch: "", fetching: false, started: new Set() };
+  return session;
+}
+
+async function refill() {
+  const wave = ensureSession();
+  if (!wave || wave.fetching) return 0;
+  wave.fetching = true;
   try {
-    const last = player.queue[player.queue.length - 1];
-    const source = last.sources?.find((s) => s.provider === "yandex");
-    const { tracks, batch } = await api.wave(session.station, null, source?.id || null);
-    const seen = new Set(player.queue.map((t) => t.id));
-    session.batch = batch;
-    player.addToQueue(tracks.filter((t) => !seen.has(t.id)));
-  } catch { /* try again on the next track */ } finally {
-    session.fetching = false;
+    // The wave only moves on when it is told what is already queued and what has started playing.
+    const recent = player.queue.slice(-20).map(yandexId).filter(Boolean);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const { tracks, batch } = await api.wave(wave.station, null, recent.join(","));
+      wave.batch = batch;
+      const seen = new Set(player.queue.map((t) => t.id));
+      const fresh = tracks.filter((t) => !seen.has(t.id));
+      if (fresh.length) { player.addToQueue(fresh); return fresh.length; }
+      await Promise.all(recent.map((id) => api.waveFeedback(wave.station, batch, "trackStarted", id, 0).catch(() => {})));
+    }
+    return 0;
+  } catch {
+    return 0;
+  } finally {
+    wave.fetching = false;
   }
+}
+
+player.on("track", ({ track }) => {
+  if (player.context?.type !== "wave") return;
+  const wave = ensureSession();
+  if (!wave) return;
+  wave.started ??= new Set();
+  const id = yandexId(track);
+  if (id && !wave.started.has(id)) {
+    wave.started.add(id);
+    api.waveFeedback(wave.station, wave.batch, "trackStarted", id, 0).catch(() => {});
+  }
+  if (player.index >= player.queue.length - 3) refill();
+});
+
+// Reached the end before the next batch arrived: fetch and keep playing.
+player.on("moodExhausted", async () => {
+  if (player.context?.type !== "wave") return;
+  const before = player.queue.length;
+  if (await refill()) player.playAt(before);
 });
 
 // Feedback makes the next batches better: finished tracks and skips are reported.
 player.on("advance", ({ track, played, auto }) => {
-  if (player.context?.type !== "wave" || !session) return;
-  const source = track?.sources?.find((s) => s.provider === "yandex");
-  if (!source) return;
-  api.waveFeedback(session.station, session.batch, auto ? "trackFinished" : "skip", source.id, played).catch(() => {});
+  if (player.context?.type !== "wave" || !ensureSession()) return;
+  const id = yandexId(track);
+  if (id) api.waveFeedback(session.station, session.batch, auto ? "trackFinished" : "skip", id, played).catch(() => {});
 });

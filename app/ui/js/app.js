@@ -204,10 +204,9 @@ window.addEventListener("beforeunload", () => player.saveSession());
   // The splash stays a moment so it reads as a logo, not a flicker.
   setTimeout(() => $("#splash")?.classList.add("out"), Math.max(0, 1000 - (performance.now() - shown)));
   setTimeout(() => $("#splash")?.remove(), 1800);
+  api.accounts().then((accounts) => { if (accounts.yandex?.connected) syncLikes(); }).catch(() => {});
   await player.restoreSession().catch(() => {});
   renderBar();
-  const accounts = await api.accounts().catch(() => ({}));
-  if (accounts.yandex?.connected) syncLikes();
 })();
 
 window.nearfield = { player, navigate, api, syncLikes };

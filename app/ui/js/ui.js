@@ -54,22 +54,12 @@ export function artistLinks(track) {
 
 export const artistNames = (track) => (track.artists || []).map((a) => a.name).join(", ");
 
-export const STATE_LABEL = {
-  new: "в очереди на загрузку",
-  downloading: "скачивается…",
-  downloaded: "скачан · ждёт 3D-разбора",
-  separating: "готовится 3D…",
-  ready: "готов в 3D",
-  error: "ошибка",
-};
-
+// Only what matters to a listener: the track is ready in full 3D, it is a short preview, or it failed.
 export function stateBadge(item) {
   if (!item) return "";
-  if (item.preview) return `<span class="badge warn" title="Полный трек недоступен — войди в Яндекс Музыку">30 сек</span>`;
-  if (item.state === "ready") return `<span class="badge ok" title="Разделён на стемы — полноценный 3D">3D</span>`;
-  if (item.state === "separating" || item.state === "downloading") return `<span class="badge busy" title="${STATE_LABEL[item.state]}"><i></i></span>`;
-  if (item.state === "error") return `<span class="badge err" title="${esc(item.error || "ошибка")}">!</span>`;
-  if (item.state === "downloaded") return `<span class="badge" title="${STATE_LABEL.downloaded}">↓</span>`;
+  if (item.preview) return `<span class="badge warn" title="Доступно только 30 секунд">30 с</span>`;
+  if (item.state === "ready") return `<span class="badge ok" title="Полное 3D-звучание">3D</span>`;
+  if (item.state === "error") return `<span class="badge err" title="Не удалось скачать">!</span>`;
   return "";
 }
 
@@ -87,6 +77,11 @@ export const ICON = {
   trash: `<svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>`,
   edit: `<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>`,
   grip: `<svg viewBox="0 0 24 24" class="fill"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>`,
+  sliders: `<svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>`,
+  queue: `<svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg>`,
+  expand: `<svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>`,
+  user: `<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>`,
+  sync: `<svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4"/></svg>`,
   ext: `<svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>`,
 };
 

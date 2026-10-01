@@ -301,12 +301,36 @@ pub async fn account(http: &reqwest::Client, token: &str) -> Result<(String, boo
     Ok((login, plus))
 }
 
-/// The user's liked tracks, newest first (the order Yandex shows them in).
-pub async fn liked_tracks(http: &reqwest::Client, token: &str) -> Result<Vec<Track>> {
+/// Seconds since the epoch from an ISO-8601 time like "2024-05-01T12:34:56+03:00".
+fn iso_seconds(text: &str) -> Option<i64> {
+    let (date, rest) = text.split_once('T')?;
+    let mut d = date.split('-').map(|x| x.parse::<i64>().ok());
+    let (y, m, day) = (d.next()??, d.next()??, d.next()??);
+    let time = &rest[..rest.len().min(8)];
+    let mut t = time.split(':').map(|x| x.parse::<i64>().ok());
+    let (h, min, sec) = (t.next()??, t.next()??, t.next()??);
+    // Days from the civil calendar (Howard Hinnant's algorithm).
+    let y2 = if m <= 2 { y - 1 } else { y };
+    let era = y2.div_euclid(400);
+    let yoe = y2 - era * 400;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    let mut offset = 0;
+    if let Some(pos) = rest.rfind(['+', '-']).filter(|&p| p >= 8) {
+        let sign = if &rest[pos..pos + 1] == "-" { -1 } else { 1 };
+        let tz: Vec<i64> = rest[pos + 1..].split(':').filter_map(|x| x.parse().ok()).collect();
+        offset = sign * (tz.first().copied().unwrap_or(0) * 3600 + tz.get(1).copied().unwrap_or(0) * 60);
+    }
+    Some(days * 86400 + h * 3600 + min * 60 + sec - offset)
+}
+
+/// The user's liked tracks with the moment each was liked.
+pub async fn liked_tracks(http: &reqwest::Client, token: &str) -> Result<Vec<(Track, Option<i64>)>> {
     let status = get(http, Some(token), "/account/status", &[]).await?;
     let uid = id_string(status.pointer("/account/uid")).ok_or_else(|| anyhow!("нет номера аккаунта"))?;
     let likes = get(http, Some(token), &format!("/users/{uid}/likes/tracks"), &[]).await?;
-    let mut refs: Vec<(u8, String)> = likes
+    let refs: Vec<(String, Option<i64>)> = likes
         .pointer("/library/tracks")
         .and_then(Value::as_array)
         .map(|list| {
@@ -317,15 +341,14 @@ pub async fn liked_tracks(http: &reqwest::Client, token: &str) -> Result<Vec<Tra
                         Some(album) => format!("{id}:{album}"),
                         None => id,
                     };
-                    Some((0, key))
+                    Some((key, t.get("timestamp").and_then(Value::as_str).and_then(iso_seconds)))
                 })
                 .collect()
         })
         .unwrap_or_default();
-    refs.dedup();
     let mut out = Vec::new();
     for chunk in refs.chunks(100) {
-        let ids = chunk.iter().map(|(_, k)| k.as_str()).collect::<Vec<_>>().join(",");
+        let ids = chunk.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>().join(",");
         let response = http
             .post(format!("{API}/tracks"))
             .header("X-Yandex-Music-Client", CLIENT)
@@ -334,11 +357,24 @@ pub async fn liked_tracks(http: &reqwest::Client, token: &str) -> Result<Vec<Tra
             .send()
             .await?;
         let body: Value = response.json().await?;
-        if let Some(list) = body.get("result").and_then(Value::as_array) {
-            out.extend(list.iter().filter_map(|t| parse_track(t, true)));
+        for t in body.get("result").and_then(Value::as_array).into_iter().flatten() {
+            let Some(track) = parse_track(t, true) else { continue };
+            let id = id_string(t.get("id")).unwrap_or_default();
+            let at = chunk.iter().find(|(k, _)| k.split(':').next() == Some(id.as_str())).and_then(|(_, at)| *at);
+            out.push((track, at));
         }
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod time_tests {
+    #[test]
+    fn iso() {
+        assert_eq!(super::iso_seconds("1970-01-01T00:00:00+00:00"), Some(0));
+        assert_eq!(super::iso_seconds("2024-05-01T12:00:00+03:00"), Some(1714554000));
+        assert_eq!(super::iso_seconds("2000-02-29T23:59:59Z"), Some(951868799));
+    }
 }
 
 /// "My Wave" and activity stations: Yandex's own recommendations from the user's listening.
@@ -354,8 +390,9 @@ pub async fn wave(http: &reqwest::Client, token: &str, station: &str, settings: 
             .error_for_status()?;
     }
     let mut query = vec![("settings2", "true".to_string())];
-    if let Some(after) = after {
-        query.push(("queue", track_id(after).to_string()));
+    // `after`: comma-separated "track:album" ids already queued, so the wave continues past them.
+    if let Some(after) = after.filter(|a| !a.is_empty()) {
+        query.push(("queue", after.to_string()));
     }
     let result = get(http, Some(token), &format!("/rotor/station/{station}/tracks"), &query).await?;
     let batch = result.get("batchId").and_then(Value::as_str).unwrap_or("").to_string();

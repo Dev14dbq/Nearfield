@@ -208,7 +208,9 @@ mod likes_live {
         let http = reqwest::Client::builder().user_agent("Mozilla/5.0").build().unwrap();
         let (login, plus) = super::yandex::account(&http, &token).await.unwrap();
         println!("account ok, plus={plus}, login_len={}", login.len());
-        let tracks = super::yandex::liked_tracks(&http, &token).await.unwrap();
+        let liked = super::yandex::liked_tracks(&http, &token).await.unwrap();
+        println!("first liked at {:?}, last liked at {:?}", liked.first().map(|l| l.1), liked.last().map(|l| l.1));
+        let tracks: Vec<_> = liked.into_iter().map(|(t, _)| t).collect();
         println!("liked: {}", tracks.len());
         for t in tracks.iter().take(3) { println!("  {} — {} {:?}", t.artists[0].name, t.title, t.sources[0].audio); }
         if let Some(t) = tracks.first() {

@@ -252,17 +252,17 @@ async fn accounts(state: State<'_, AppState>) -> Res<Value> {
 #[tauri::command]
 async fn import_yandex_likes(app: AppHandle, state: State<'_, AppState>) -> Res<Value> {
     let token = state.accounts().yandex_token.ok_or("сначала войди в Яндекс Музыку")?;
-    let tracks = providers::yandex::liked_tracks(&state.http, &token).await.map_err(err)?;
-    let total = tracks.len();
+    let liked = providers::yandex::liked_tracks(&state.http, &token).await.map_err(err)?;
+    let total = liked.len();
     let added = with_db(&state, |db| {
         let mut added = 0;
-        let start = db::now() - tracks.len() as i64;
-        // Oldest first, so the newest like ends up on top of the favourites list.
-        for (i, track) in tracks.iter().rev().enumerate() {
+        let fallback = db::now();
+        for (i, (track, at)) in liked.iter().enumerate() {
             let known = db.get(&track.id)?.is_some_and(|t| t.favorite);
             db.upsert(track)?;
+            // Favourites are ordered by when the track was liked in Yandex (newest on top).
+            db.favorite_at(&track.id, at.unwrap_or(fallback - i as i64))?;
             if !known {
-                db.favorite_at(&track.id, start + i as i64)?;
                 added += 1;
             }
         }

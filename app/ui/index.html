@@ -2,7 +2,7 @@
 <html lang="ru">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Nearfield</title>
     <link rel="stylesheet" href="app.css" />
   </head>
@@ -26,6 +26,8 @@
           <button class="nav-item" data-nav="home"><svg viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z"/></svg>Главная</button>
           <button class="nav-item" data-nav="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>Поиск</button>
           <button class="nav-item" data-nav="wave"><svg viewBox="0 0 24 24"><path d="M3 12c2.5-5 4.5-5 6 0s3.5 5 6 0 4.5-5 6 0"/></svg>Моя волна</button>
+          <button class="nav-item m-only" data-nav="library"><svg viewBox="0 0 24 24"><path d="M5 4v16M10 4v16M15 5l4 15"/></svg>Медиатека</button>
+          <button class="nav-item m-only" data-nav="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>Настройки</button>
         </nav>
         <div class="side-section">
           <div class="side-head"><span>Медиатека</span><button class="icon-btn small" id="newPlaylist" title="Новый плейлист"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div>
@@ -90,50 +92,39 @@
 
     <!-- Now playing -->
     <section class="np" id="np" hidden>
-      <div class="np-bg"><img id="npBg" alt="" /></div>
-      <header class="np-top" data-tauri-drag-region>
-        <button class="icon-btn" id="npClose" title="Свернуть (Esc)"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
-        <div class="np-context" id="npContext" data-tauri-drag-region></div>
-        <button class="icon-btn" id="npImmersive" title="Погружение (F)"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
-      </header>
-      <div class="np-body">
+      <div class="np-bg" id="npBg"></div>
+      <div class="np-drag" data-tauri-drag-region></div>
+      <button class="np-round np-close" id="npClose" title="Свернуть (Esc)"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+      <div class="np-body" id="npBody">
         <div class="np-left">
-          <div class="np-stage">
+          <div class="np-art" id="npArt">
             <canvas id="stageCanvas"></canvas>
-            <img class="np-cover" id="npCover" alt="" />
-          </div>
-          <div class="np-info">
-            <div class="np-title">
-              <div>
-                <h1 id="npTitle"></h1>
-                <button class="link" id="npArtist"></button>
+            <img class="np-cover" id="npCover" alt="" crossorigin="anonymous" />
+            <div class="np-hover">
+              <button class="np-round np-tr" id="npQueue" title="Очередь"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg></button>
+              <div class="np-mid">
+                <button class="np-round" id="npPrev" title="Назад"><svg viewBox="0 0 24 24" class="fill"><path d="M7 6h2v12H7zM10 12l9 6V6z"/></svg></button>
+                <button class="np-play" id="npPlay" title="Играть (Пробел)"><svg viewBox="0 0 24 24" class="fill i-play"><path d="M8 5.5v13l11-6.5z"/></svg><svg viewBox="0 0 24 24" class="fill i-pause"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg><span class="spinner"></span></button>
+                <button class="np-round" id="npNext" title="Дальше"><svg viewBox="0 0 24 24" class="fill"><path d="M15 6h2v12h-2zM14 12 5 6v12z"/></svg></button>
+                <button class="np-round small" id="npRepeat" title="Повтор"><svg viewBox="0 0 24 24"><path d="M17 2l3 3-3 3"/><path d="M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3"/><path d="M20 13v2a4 4 0 0 1-4 4H4"/></svg></button>
               </div>
-              <button class="icon-btn heart big" id="npHeart" title="В избранное (L)"><svg viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 7.4 4.3 4.3 0 0 1 19.5 10c0 5.4-7.5 10-7.5 10z"/></svg></button>
+              <button class="np-round np-bl" id="npMore" title="Ещё"><svg viewBox="0 0 24 24" class="fill"><circle cx="5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="19" cy="12" r="1.9"/></svg></button>
+              <button class="np-round np-bc" id="npLyricsBtn" title="Текст"><svg viewBox="0 0 24 24"><path d="M4 6h10M9 6v13M14 12h6M14 16h6M14 20h4"/></svg></button>
+              <button class="np-round np-br heart" id="npHeart" title="В избранное (L)"><svg viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 7.4 4.3 4.3 0 0 1 19.5 10c0 5.4-7.5 10-7.5 10z"/></svg></button>
             </div>
-            <div class="np-seek">
-              <input type="range" id="npSeek" min="0" max="1000" value="0" />
-              <div><span id="npCur">0:00</span><span id="npBadge"></span><span id="npDur">0:00</span></div>
-            </div>
-            <div class="np-controls">
-              <button class="icon-btn" id="npShuffle" title="Перемешать"><svg viewBox="0 0 24 24"><path d="M16 4h4v4M4 20 20 4M20 16v4h-4M15 15l5 5M4 4l5 5"/></svg></button>
-              <button class="icon-btn big" id="npPrev" title="Назад"><svg viewBox="0 0 24 24" class="fill"><path d="M7 6h2v12H7zM10 12l9 6V6z"/></svg></button>
-              <button class="play-btn big" id="npPlay" title="Играть (Пробел)"><svg viewBox="0 0 24 24" class="fill i-play"><path d="M8 5.5v13l11-6.5z"/></svg><svg viewBox="0 0 24 24" class="fill i-pause"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg><span class="spinner"></span></button>
-              <button class="icon-btn big" id="npNext" title="Дальше"><svg viewBox="0 0 24 24" class="fill"><path d="M15 6h2v12h-2zM14 12 5 6v12z"/></svg></button>
-              <button class="icon-btn" id="npRepeat" title="Повтор"><svg viewBox="0 0 24 24"><path d="M17 2l3 3-3 3"/><path d="M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3"/><path d="M20 13v2a4 4 0 0 1-4 4H4"/></svg></button>
-            </div>
-            <div class="np-volume"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/></svg><input type="range" id="npVolume" min="0" max="100" value="85" /><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12"/></svg></div>
+          </div>
+          <div class="np-caption"><b id="npTitle"></b><button class="link" id="npArtist"></button></div>
+          <div class="np-seek">
+            <input type="range" id="npSeek" min="0" max="1000" value="0" />
+            <div class="np-times"><span id="npCur">0:00</span><span id="npBadge"></span><span id="npDur">0:00</span></div>
           </div>
         </div>
-        <div class="np-right">
-          <div class="tabs" id="npTabs">
-            <button data-tab="lyrics" class="active">Текст</button>
-            <button data-tab="sound">Звук</button>
-            <button data-tab="queue">Очередь</button>
-          </div>
-          <div class="tab-panel" data-panel="lyrics"><div class="lyrics" id="lyrics"></div></div>
-          <div class="tab-panel" data-panel="sound" hidden><div id="soundPanel"></div></div>
-          <div class="tab-panel" data-panel="queue" hidden><div id="queuePanel"></div></div>
-        </div>
+        <div class="np-right"><div class="lyrics" id="lyrics"></div></div>
+        <aside class="np-drawer" id="npDrawer">
+          <header><b id="npDrawerTitle"></b><button class="np-round small" id="npDrawerClose" title="Закрыть"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></header>
+          <div class="np-drawer-body" id="soundPanel" data-panel="sound"></div>
+          <div class="np-drawer-body" id="queuePanel" data-panel="queue"></div>
+        </aside>
       </div>
     </section>
 

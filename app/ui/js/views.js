@@ -7,6 +7,7 @@ import { library, newPlaylist, playlistsCache, refreshPlaylists, renderTracks, s
 import { $, $$, artistNames, ask, confirmBox, cover, esc, fmtCount, fmtTime, ICON, plural, PROVIDERS, toast } from "./ui.js";
 import { ACTIVITIES, CHARACTER, DEFAULT_WAVE, describe, LANGUAGE, loadWave, MOOD, startWave } from "./wave.js";
 import { USER_EQ_BANDS } from "../engine/graph.js";
+import { buildSections } from "./sections.js";
 
 const view = $("#view");
 const stack = [];
@@ -228,17 +229,34 @@ async function album({ id, title, cover: art, artist: artistName }) {
   wireListActions(tracks, context, { title });
 }
 
+let favSection = "all";
+
 async function favorites() {
   const tracks = await api.favorites().catch(() => []);
   tracks.forEach((t) => library.set(t.id, t));
   const accounts = await api.accounts().catch(() => ({}));
+  const sections = buildSections(tracks);
+  if (!sections.some((sec) => sec.id === favSection)) favSection = "all";
   view.innerHTML = `<div class="page">
     ${listHeader({ kind: "Плейлист", title: "Избранное", sub: summary(tracks), art: LIKED_ART("hero") })}
-    ${actionRow(accounts.yandex?.connected ? `<button class="btn ghost" data-act="likes">Обновить из Яндекса</button>` : "")}
+    ${actionRow(accounts.yandex?.connected ? `<button class="icon-btn big" data-act="likes" title="Забрать новые лайки из Яндекса">${ICON.sync}</button>` : "")}
+    ${sections.length > 1 ? `<div class="sections" id="favSections">${sections.map((sec) => `<button class="section-chip ${sec.id === favSection ? "active" : ""}" data-sec="${sec.id}">${sec.icon ? `<img src="img/icons/${sec.icon}.png" alt="" onerror="this.remove()" />` : ""}${esc(sec.label)}</button>`).join("")}</div>` : ""}
     <div id="favTracks"></div></div>`;
-  const context = { type: "favorites", label: "Избранное" };
-  renderTracks($("#favTracks"), tracks, { context, empty: "Пока пусто. Жми ♥ у трека." });
-  wireListActions(tracks, context);
+  const show = () => {
+    const sec = sections.find((x) => x.id === favSection) || sections[0];
+    const context = { type: "favorites", label: sec.id === "all" ? "Избранное" : `Избранное · ${sec.label}` };
+    renderTracks($("#favTracks"), sec.tracks, { context, empty: "Пока пусто. Жми ♥ у трека." });
+    $(".list-sub", view).textContent = summary(sec.tracks);
+    return { list: sec.tracks, context };
+  };
+  let shown = show();
+  $$("[data-sec]", view).forEach((chip) => chip.addEventListener("click", () => {
+    favSection = chip.dataset.sec;
+    $$("[data-sec]", view).forEach((c) => c.classList.toggle("active", c === chip));
+    shown = show();
+  }));
+  $('[data-act="play"]', view).addEventListener("click", () => shown.list.length && player.playList(shown.list, 0, shown.context));
+  $('[data-act="shuffle"]', view).addEventListener("click", () => { if (!shown.list.length) return; player.setShuffle(true); player.playList(shown.list, Math.floor(Math.random() * shown.list.length), shown.context); });
   $('[data-act="likes"]', view)?.addEventListener("click", () => window.nearfield.syncLikes({ manual: true }));
 }
 
@@ -303,9 +321,10 @@ export async function startMood(id, el) {
 
 /* ───── my wave ───── */
 
-const SPARK = `<svg viewBox="0 0 48 48" class="wave-ico"><defs><linearGradient id="gS" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe27a"/><stop offset="1" stop-color="#f5a623"/></linearGradient></defs><path d="M24 3c1.8 10.6 5.8 16.6 21 21-15.2 4.4-19.2 10.4-21 21-1.8-10.6-5.8-16.6-21-21C18.2 19.6 22.2 13.6 24 3z" fill="url(#gS)"/></svg>`;
-const BOLT = `<svg viewBox="0 0 48 48" class="wave-ico"><defs><linearGradient id="gB" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b6ff5c"/><stop offset="1" stop-color="#1fb85a"/></linearGradient></defs><path d="M29 2 8 27h13l-4 19 23-27H27z" fill="url(#gB)"/><path d="M29 2 8 27h4l17-22z" fill="#fff" opacity=".25"/></svg>`;
-const CHAR_ICON = { favorite: `<img class="wave-ico" src="img/liked@512.png" alt="" />`, discover: SPARK, popular: BOLT };
+const icon = (name) => `<img class="ico3d" src="img/icons/${name}.png" alt="" onerror="this.remove()" />`;
+const CHAR_ICON = { favorite: `<img class="wave-ico" src="img/liked@512.png" alt="" />`, discover: `<img class="wave-ico clear" src="img/icons/sparkle.png" alt="" />`, popular: `<img class="wave-ico clear" src="img/icons/bolt.png" alt="" />` };
+const ACT_ICON = { "wake-up": "sun", "road-trip": "car", "work-background": "laptop", workout: "dumbbell", "fall-asleep": "moon" };
+const LANG_ICON = { russian: "ru", "not-russian": "globe", "without-words": "wave" };
 
 async function wave() {
   const state = await loadWave();
@@ -323,13 +342,13 @@ async function wave() {
         </div>
         <div class="wave-panel">
           <h3>По занятию</h3>
-          <div class="wchips">${ACTIVITIES.map((a) => `<button class="wchip ${pick("activity", a.id) ? "active" : ""}" data-g="activity" data-v="${a.id}">${a.label}</button>`).join("")}</div>
+          <div class="wchips">${ACTIVITIES.map((a) => `<button class="wchip ${pick("activity", a.id) ? "active" : ""}" data-g="activity" data-v="${a.id}">${icon(ACT_ICON[a.id])}${a.label}</button>`).join("")}</div>
           <h3>По характеру</h3>
           <div class="wcards">${CHARACTER.map((c) => `<button class="wcard ${pick("diversity", c.id) ? "active" : ""}" data-g="diversity" data-v="${c.id}">${CHAR_ICON[c.id]}<b>${c.label}</b></button>`).join("")}</div>
           <h3>По настроению</h3>
           <div class="wmoods">${MOOD.map((m) => `<button class="wmood ${pick("moodEnergy", m.id) ? "active" : ""}" data-g="moodEnergy" data-v="${m.id}"><span style="--a:${m.colors[0]};--b:${m.colors[1]}"></span><b>${m.label}</b></button>`).join("")}</div>
           <h3>По языку</h3>
-          <div class="wchips">${LANGUAGE.map((l) => `<button class="wchip ${pick("language", l.id) ? "active" : ""}" data-g="language" data-v="${l.id}">${l.label}</button>`).join("")}</div>
+          <div class="wchips">${LANGUAGE.map((l) => `<button class="wchip ${pick("language", l.id) ? "active" : ""}" data-g="language" data-v="${l.id}">${icon(LANG_ICON[l.id])}${l.label}</button>`).join("")}</div>
         </div>
       </div>`;
     $$("[data-g]", view).forEach((el) => el.addEventListener("click", () => {
@@ -388,9 +407,9 @@ async function settings({ focus } = {}) {
       </details>
     </section>
 
-    <h2 class="set-h">3D-библиотека</h2>
+    <h2 class="set-h">Полное 3D</h2>
     <section class="card">
-      <div class="card-head"><span class="ai-dot ${prep?.ai ? "on" : ""}"></span><div><b>${prep ? `${prep.ready} из ${prep.total} готовы` : "—"}</b><small>${prep?.ai ? "Стемы готовятся, когда музыка на паузе" : "Разделение на стемы не установлено"}</small></div>
+      <div class="card-head"><img class="set-ico" src="img/icons/headphones.png" alt="" onerror="this.remove()" /><div><b>${prep ? `${prep.ready} из ${prep.total} треков в полном 3D` : "—"}</b><small>${prep?.ai ? "Треки готовятся сами, пока музыка на паузе" : "Нужен модуль 3D-обработки"}</small></div>
       ${prep?.ai ? "" : `<button class="btn primary" id="installAi">Установить · 1 ГБ</button>`}<button class="btn ghost" id="retry">Повторить ошибки</button></div>
       <p class="hint" id="aiProgress" hidden></p>
     </section>`;
@@ -438,7 +457,22 @@ function wireEq() {
   sync();
 }
 
-const PAGES = { home, search, artist, album, favorites, playlist, wave, mood: wave, settings };
+/* ───── library (phone tab: favourites + playlists) ───── */
+
+async function libraryPage() {
+  await refreshPlaylists();
+  const lists = playlistsCache.list;
+  view.innerHTML = `<div class="page"><div class="lib-head"><h1>Медиатека</h1><button class="icon-btn big" data-act="new" title="Новый плейлист">${ICON.plus}</button></div>
+    <div class="lib-list">
+      <button class="lib-row" data-fav>${LIKED_ART("sm")}<span><b>Избранное</b><small>Плейлист</small></span></button>
+      ${lists.map((p) => `<button class="lib-row" data-id="${p.id}">${collage(p.covers, "sm")}<span><b>${esc(p.name)}</b><small>${p.count} ${plural(p.count, "трек", "трека", "треков")}</small></span></button>`).join("")}
+    </div></div>`;
+  $("[data-fav]", view).addEventListener("click", () => navigate("favorites"));
+  $$(".lib-row[data-id]", view).forEach((el) => el.addEventListener("click", () => navigate("playlist", { id: Number(el.dataset.id) })));
+  $('[data-act="new"]', view).addEventListener("click", async () => { const id = await newPlaylist(); if (id) navigate("playlist", { id }); });
+}
+
+const PAGES = { home, search, artist, album, favorites, playlist, wave, mood: wave, settings, library: libraryPage };
 
 /* ───── sidebar playlists ───── */
 

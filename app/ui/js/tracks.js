@@ -109,6 +109,11 @@ export async function toggleFavorite(track) {
   const favorite = !current?.favorite;
   await api.setFavorite(track, favorite);
   library.set(track.id, { ...(current || track), favorite, state: current?.state || "new" });
+  // Every heart of this track on screen flips at once.
+  document.querySelectorAll(`.trow[data-id="${CSS.escape(track.id)}"] .heart`).forEach((heart) => {
+    heart.classList.toggle("on", favorite);
+    heart.title = favorite ? "Убрать из избранного" : "В избранное";
+  });
   document.dispatchEvent(new CustomEvent("library-changed", { detail: { id: track.id } }));
   toast(favorite ? "Добавлено в избранное" : "Удалено из избранного");
 }

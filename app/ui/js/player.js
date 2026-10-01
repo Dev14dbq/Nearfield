@@ -186,7 +186,7 @@ class Player extends EventTarget {
     if (auto && this.repeat === "one") { this.engine.seek(0); this.engine.play(); return; }
     if (this.index + 1 < this.queue.length) this.playAt(this.index + 1);
     else if (this.repeat === "all" && this.queue.length) this.playAt(0);
-    else if (this.mood && auto) this.emit("moodExhausted");
+    else if ((this.mood || this.context?.type === "wave") && auto) this.emit("moodExhausted");
     else if (auto) { this.engine.pause(); this.engine.seek(0); this.emit("state"); }
   }
 
