@@ -1,7 +1,7 @@
 import { Engine } from "./engine.js";
 import { encodeWav, renderBinaural } from "./exporter.js";
 import { AMBIENCES, DEFAULT_SETTINGS, EXPERIENCES, findRoom, MODES, ORBIT_BARS, RATES, ROOMS, STEM_NAMES, VOICES } from "./presets.js";
-import { lineIndexAt, parseLrc, savedLrc, saveLrc, transcribe } from "./lyrics.js";
+import { lineIndexAt, parseLrc, savedLrc, saveLrc } from "./lyrics.js";
 import { classifyStyle, findStyle, STYLES, trackFeatures } from "./style.js";
 import { HeadTracker } from "./tracking.js";
 import { clamp, DEG, formatTime, mod, spherical } from "./util.js";
@@ -38,7 +38,7 @@ const els = {
   immersiveLyric: $("#immersiveLyric"), controlPanel: $(".control-panel"),
   styleChips: $("#styleChips"), styleInfo: $("#styleInfo"), slowedButton: $("#slowedButton"), reverbButton: $("#reverbButton"),
   lyricsStatus: $("#lyricsStatus"), lyricsLines: $("#lyricsLines"), lyricPrev: $("#lyricPrev"), lyricCurrent: $("#lyricCurrent"),
-  lyricNext: $("#lyricNext"), karaokeButton: $("#karaokeButton"), transcribeButton: $("#transcribeButton"), lrcInput: $("#lrcInput"),
+  lyricNext: $("#lyricNext"), karaokeButton: $("#karaokeButton"), lrcInput: $("#lrcInput"),
 };
 
 /* ───── settings ───── */
@@ -66,7 +66,7 @@ function saveSettings() {
 const settings = loadSettings();
 const statuses = new Map();
 const app = { trackIndex: 0, dragging: null, lastX: 0, lastY: 0, exporting: false, immersive: false, detected: null };
-const lyrics = { lines: [], index: -2, track: null, abort: null, wordsKey: "" };
+const lyrics = { lines: [], index: -2, track: null, wordsKey: "" };
 
 const engine = new Engine(settings, {
   status: (text, busy = false, channel = "main") => setStatus(text, busy, channel),
@@ -200,33 +200,12 @@ function showLines(lines, status) {
   setLyricsStatus(status);
 }
 
-async function loadLyrics(track, { force = false } = {}) {
-  lyrics.abort?.abort();
-  const controller = new AbortController(); lyrics.abort = controller; lyrics.track = track;
-  showLines([], "");
+function loadLyrics(track) {
+  lyrics.track = track;
   const lrc = savedLrc(track);
-  if (lrc && !force) { showLines(parseLrc(lrc), "Текст из твоего .lrc-файла"); return; }
-  if (!app.detected?.vocals && !force) { showLines([], "Инструментал: в треке не слышно вокала, текста нет."); return; }
-  if (!track.stems?.vocals) { showLines([], "У трека нет отдельной вокальной дорожки. Загрузи .lrc, чтобы видеть текст."); return; }
-  if (!settings.autoLyrics && !force) { showLines([], "Вокал есть. Нажми «Распознать», чтобы получить текст."); return; }
-  setLyricsStatus("Вокал найден. Распознаю слова по вокальной дорожке…");
-  try {
-    const result = await transcribe(track.stems.vocals, (text) => setStatus(text, true, "lyrics"), controller.signal);
-    if (lyrics.track !== track) return;
-    showLines(result.lines, result.lines.length
-      ? `Распознано локально (Whisper${result.language ? `, язык: ${result.language}` : ""}). На пении возможны ошибки.`
-      : "Вокал есть, но разборчивых слов не нашлось.");
-  } catch (error) {
-    if (error.name === "AbortError" || lyrics.track !== track) return;
-    const hint = error.code === "missing"
-      ? "Для распознавания установи Whisper: .venv/bin/pip install faster-whisper. Или загрузи .lrc."
-      : error.code === "offline"
-        ? "Распознавание работает, когда плеер запущен через python3 server.py. Или загрузи .lrc."
-        : `Не получилось распознать: ${error.message}`;
-    showLines([], hint);
-  } finally {
-    if (lyrics.abort === controller) setStatus(null, false, "lyrics");
-  }
+  if (lrc) showLines(parseLrc(lrc), "Текст из твоего .lrc-файла");
+  else if (!app.detected?.vocals) showLines([], "Инструментал: в треке не слышно вокала, текста нет.");
+  else showLines([], "Текста для этого трека нет. Можно загрузить свой .lrc.");
 }
 
 function escapeHtml(text) {
@@ -344,10 +323,10 @@ function selectTrack(index, autoplay = false) {
     chip.setAttribute("aria-pressed", String(available));
   });
   renderTracks();
-  app.detected = null; lyrics.abort?.abort(); lyrics.track = track;
+  app.detected = null; lyrics.track = track;
   showLines([], "Жду анализ вокала…");
   els.karaokeButton.classList.remove("active");
-  els.karaokeButton.disabled = !track.stems; els.transcribeButton.disabled = !track.stems;
+  els.karaokeButton.disabled = !track.stems;
   renderSettings();
   if (autoplay || wasPlaying) engine.play().catch(showAudioGate);
 }
@@ -578,13 +557,12 @@ els.karaokeButton.addEventListener("click", () => {
   const chip = document.querySelector('.stem-chip[data-stem="vocals"]');
   if (!chip.disabled) chip.click();
 });
-els.transcribeButton.addEventListener("click", () => loadLyrics(TRACKS[app.trackIndex], { force: true }));
 els.lrcInput.addEventListener("change", async () => {
   const file = els.lrcInput.files?.[0]; if (!file) return;
   const text = await file.text();
   const lines = parseLrc(text);
   if (!lines.length) showNotice("В файле нет строк с таймкодами вида [мм:сс.xx]");
-  else { const track = TRACKS[app.trackIndex]; saveLrc(track, text); lyrics.abort?.abort(); lyrics.track = track; showLines(lines, `Текст из файла ${file.name}`); }
+  else { const track = TRACKS[app.trackIndex]; saveLrc(track, text); lyrics.track = track; showLines(lines, `Текст из файла ${file.name}`); }
   els.lrcInput.value = "";
 });
 els.cameraButton.addEventListener("click", toggleCamera);

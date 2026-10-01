@@ -123,7 +123,6 @@ export const DEFAULT_SETTINGS = {
   // Automatic style detection picks the scene for every new track until a scene is chosen by hand.
   autoStyle: true,
   style: null,
-  autoLyrics: true,
   uiMode: "simple",
   spatial: true,
   headphone: true,
