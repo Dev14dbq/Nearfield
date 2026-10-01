@@ -58,34 +58,26 @@
       </main>
 
       <footer class="playerbar" id="playerbar">
+        <div class="pb-progress" id="pbProgress"><input type="range" id="seek" min="0" max="1000" value="0" /></div>
         <div class="pb-track">
-          <button class="pb-cover" id="pbCover" title="Открыть плеер"><img id="pbCoverImg" alt="" /><span class="pb-expand"><svg viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg></span></button>
-          <div class="pb-meta">
-            <b id="pbTitle"></b>
-            <span id="pbArtist"></span>
-          </div>
-          <button class="icon-btn heart" id="pbHeart" title="В избранное"><svg viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 7.4 4.3 4.3 0 0 1 19.5 10c0 5.4-7.5 10-7.5 10z"/></svg></button>
+          <button class="pb-cover" id="pbCover" title="Открыть плеер"><img id="pbCoverImg" alt="" crossorigin="anonymous" /><span class="pb-expand"><svg viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg></span></button>
+          <div class="pb-meta"><b id="pbTitle"></b><span id="pbArtist"></span></div>
+          <button class="icon-btn heart" id="pbHeart" title="В избранное (L)"><svg viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 7.4 4.3 4.3 0 0 1 19.5 10c0 5.4-7.5 10-7.5 10z"/></svg></button>
         </div>
         <div class="pb-center">
-          <div class="pb-controls">
-            <button class="icon-btn" id="shuffleBtn" title="Перемешать"><svg viewBox="0 0 24 24"><path d="M16 4h4v4M4 20 20 4M20 16v4h-4M15 15l5 5M4 4l5 5"/></svg></button>
-            <button class="icon-btn" id="prevBtn" title="Предыдущий"><svg viewBox="0 0 24 24" class="fill"><path d="M7 6h2v12H7zM10 12l9 6V6z"/></svg></button>
-            <button class="play-btn" id="playBtn" title="Играть"><svg viewBox="0 0 24 24" class="fill i-play"><path d="M8 5.5v13l11-6.5z"/></svg><svg viewBox="0 0 24 24" class="fill i-pause"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg><span class="spinner"></span></button>
-            <button class="icon-btn" id="nextBtn" title="Следующий"><svg viewBox="0 0 24 24" class="fill"><path d="M15 6h2v12h-2zM14 12 5 6v12z"/></svg></button>
-            <button class="icon-btn" id="repeatBtn" title="Повтор"><svg viewBox="0 0 24 24"><path d="M17 2l3 3-3 3"/><path d="M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3"/><path d="M20 13v2a4 4 0 0 1-4 4H4"/></svg></button>
-          </div>
-          <div class="pb-seek">
-            <span id="curTime">0:00</span>
-            <input type="range" id="seek" min="0" max="1000" value="0" />
-            <span id="durTime">0:00</span>
-          </div>
+          <button class="icon-btn" id="shuffleBtn" title="Перемешать"><svg viewBox="0 0 24 24"><path d="M16 4h4v4M4 20 20 4M20 16v4h-4M15 15l5 5M4 4l5 5"/></svg></button>
+          <button class="icon-btn" id="prevBtn" title="Назад"><svg viewBox="0 0 24 24" class="fill"><path d="M7 6h2v12H7zM10 12l9 6V6z"/></svg></button>
+          <button class="play-btn" id="playBtn" title="Играть (Пробел)"><svg viewBox="0 0 24 24" class="fill i-play"><path d="M8 5.5v13l11-6.5z"/></svg><svg viewBox="0 0 24 24" class="fill i-pause"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg><span class="spinner"></span></button>
+          <button class="icon-btn" id="nextBtn" title="Дальше"><svg viewBox="0 0 24 24" class="fill"><path d="M15 6h2v12h-2zM14 12 5 6v12z"/></svg></button>
+          <button class="icon-btn" id="repeatBtn" title="Повтор"><svg viewBox="0 0 24 24"><path d="M17 2l3 3-3 3"/><path d="M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3"/><path d="M20 13v2a4 4 0 0 1-4 4H4"/></svg></button>
         </div>
         <div class="pb-right">
+          <span class="pb-time"><span id="curTime">0:00</span> / <span id="durTime">0:00</span></span>
           <span class="pb-status" id="pbStatus"></span>
           <button class="toggle-pill" id="pb3d" title="3D-звук (D)">3D</button>
-          <button class="toggle-pill" id="pbSound" title="Звук трека">Звук</button>
-          <button class="icon-btn" id="queueBtn" title="Очередь"><svg viewBox="0 0 24 24"><path d="M4 6h12M4 12h12M4 18h8M18 15v6l4-3z"/></svg></button>
-          <div class="volume"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg><input type="range" id="volume" min="0" max="100" value="85" /></div>
+          <button class="icon-btn" id="pbSound" title="Звук трека"><svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></button>
+          <button class="icon-btn" id="queueBtn" title="Очередь"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg></button>
+          <div class="volume"><button class="icon-btn small" id="muteBtn" title="Звук"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg></button><input type="range" id="volume" min="0" max="100" value="85" /></div>
         </div>
       </footer>
     </div>
@@ -98,7 +90,6 @@
       <div class="np-body" id="npBody">
         <div class="np-left">
           <div class="np-art" id="npArt">
-            <canvas id="stageCanvas"></canvas>
             <img class="np-cover" id="npCover" alt="" crossorigin="anonymous" />
             <div class="np-hover">
               <button class="np-round np-tr" id="npQueue" title="Очередь"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg></button>
@@ -121,19 +112,33 @@
         </div>
         <div class="np-right"><div class="lyrics" id="lyrics"></div></div>
         <aside class="np-drawer" id="npDrawer">
-          <header><b id="npDrawerTitle"></b><button class="np-round small" id="npDrawerClose" title="Закрыть"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></header>
+          <header><button class="np-back" id="npDrawerClose" title="Назад (Esc)"><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg><b id="npDrawerTitle"></b></button></header>
           <div class="np-drawer-body" id="soundPanel" data-panel="sound"></div>
           <div class="np-drawer-body" id="queuePanel" data-panel="queue"></div>
         </aside>
       </div>
     </section>
 
-    <!-- Immersive -->
+    <!-- Immersive: the track as a screensaver -->
     <section class="immersive" id="immersive" hidden>
-      <canvas id="immersiveCanvas"></canvas>
-      <div class="imm-lyric" id="immLyric"></div>
-      <div class="imm-meta"><span id="immMode"></span></div>
-      <button class="icon-btn imm-close" id="immClose"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      <div class="imm-bg"><img id="immBg" alt="" /><img id="immBg2" alt="" /></div>
+      <div class="imm-stage">
+        <img class="imm-cover" id="immCover" alt="" />
+        <div class="imm-text">
+          <div class="imm-lyric" id="immLyric"></div>
+          <div class="imm-next" id="immNext"></div>
+        </div>
+      </div>
+      <div class="imm-meta"><b id="immTitle"></b><span id="immArtist"></span><em id="immMode"></em></div>
+      <div class="imm-ui">
+        <div class="imm-controls">
+          <button class="np-round" id="immPrev"><svg viewBox="0 0 24 24" class="fill"><path d="M7 6h2v12H7zM10 12l9 6V6z"/></svg></button>
+          <button class="np-play" id="immPlay"><svg viewBox="0 0 24 24" class="fill i-play"><path d="M8 5.5v13l11-6.5z"/></svg><svg viewBox="0 0 24 24" class="fill i-pause"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg></button>
+          <button class="np-round" id="immNextBtn"><svg viewBox="0 0 24 24" class="fill"><path d="M15 6h2v12h-2zM14 12 5 6v12z"/></svg></button>
+        </div>
+        <div class="imm-progress"><i id="immBar"></i></div>
+      </div>
+      <button class="np-round imm-close" id="immClose" title="Выйти (Esc)"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" transform="rotate(180 12 12)"/></svg></button>
     </section>
 
     <div class="menu" id="menu" hidden></div>

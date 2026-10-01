@@ -3,11 +3,10 @@
 import { api } from "./api.js";
 import { lineIndexAt, parseLrc } from "../engine/lyrics.js";
 import { AMBIENCES, findRoom, MODES, ROOMS } from "../engine/presets.js";
-import { StageView } from "../engine/visual.js";
 import { player } from "./player.js";
 import { ROOM_FIT, SCENE_PRESETS, SPEEDS, STYLE_SCENES } from "./scenes.js";
 import { library, newPlaylist, playlistsCache, refreshPlaylists, toggleFavorite } from "./tracks.js";
-import { $, $$, artistNames, cover, esc, fmtTime, ICON, openMenu, toast } from "./ui.js";
+import { $, $$, artistNames, cover, coverTone, esc, fmtTime, ICON, openMenu, toast } from "./ui.js";
 
 const els = {
   np: $("#np"), bg: $("#npBg"), body: $("#npBody"), art: $("#npArt"), cover: $("#npCover"), title: $("#npTitle"), artist: $("#npArtist"), heart: $("#npHeart"),
@@ -15,8 +14,6 @@ const els = {
   seek: $("#npSeek"), cur: $("#npCur"), dur: $("#npDur"), badge: $("#npBadge"), play: $("#npPlay"), repeat: $("#npRepeat"),
   immersive: $("#immersive"), immLyric: $("#immLyric"), immMode: $("#immMode"),
 };
-const stage = new StageView($("#stageCanvas"));
-const immersiveStage = new StageView($("#immersiveCanvas"), { immersive: true });
 const lyricsState = { lines: [], index: -2, trackId: null, has: false };
 let navigate = () => {};
 let tab = null; // drawer: null | "sound" | "queue"
@@ -44,9 +41,14 @@ export const nowPlaying = {
   toggle() { if (this.open) this.hide(); else this.show(); },
   setImmersive(on) {
     els.immersive.hidden = !on;
-    if (on) document.documentElement.requestFullscreen?.().catch(() => {});
-    else if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    if (on) {
+      renderImmersive();
+      wakeImmersive();
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    } else if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   },
+  get drawerOpen() { return Boolean(tab); },
+  closeDrawer() { setTab(null); },
 };
 
 /* ───── meta + controls ───── */
@@ -67,23 +69,12 @@ function renderMeta() {
 }
 
 // Background takes the cover's dominant colour, darkened — like Yandex Music.
-els.cover.addEventListener("load", () => {
-  try {
-    const canvas = document.createElement("canvas"); canvas.width = canvas.height = 24;
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    ctx.drawImage(els.cover, 0, 0, 24, 24);
-    const data = ctx.getImageData(0, 0, 24, 24).data;
-    let r = 0; let g = 0; let b = 0; let w = 0;
-    for (let i = 0; i < data.length; i += 4) {
-      const max = Math.max(data[i], data[i + 1], data[i + 2]); const min = Math.min(data[i], data[i + 1], data[i + 2]);
-      const weight = 0.15 + (max - min) / 255; // favour saturated pixels
-      r += data[i] * weight; g += data[i + 1] * weight; b += data[i + 2] * weight; w += weight;
-    }
-    r /= w; g /= w; b /= w;
-    const k = 0.42 / Math.max(0.35, Math.max(r, g, b) / 255); // bring brightness to a dark, rich level
-    const c = (v) => Math.round(Math.min(255, v * k * 0.62));
-    els.np.style.setProperty("--np-color", `rgb(${c(r)}, ${c(g)}, ${c(b)})`);
-  } catch { els.np.style.removeProperty("--np-color"); }
+els.cover.addEventListener("load", async () => {
+  const url = els.cover.dataset.src;
+  els.np.style.setProperty("--np-img", url ? `url("${url}")` : "none");
+  const color = await coverTone(url, els.cover);
+  if (els.cover.dataset.src !== url) return;
+  if (color) { els.np.style.setProperty("--np-color", color); els.immersive.style.setProperty("--np-color", color); }
 });
 
 function renderControls() {
@@ -150,6 +141,32 @@ export function syncVolume() {
   if (input) { input.value = Math.round(player.volume * 100); paintRange(input); }
 }
 
+/* ───── immersive: the track as a screensaver ───── */
+
+function renderImmersive() {
+  const track = player.track;
+  if (!track) return;
+  const src = track.cover || "";
+  ["#immBg", "#immBg2", "#immCover"].forEach((sel) => { const img = $(sel); if (img.getAttribute("src") !== src) img.src = src; });
+  $("#immCover").hidden = !src;
+  $("#immTitle").textContent = track.title;
+  $("#immArtist").textContent = artistNames(track);
+  els.immersive.classList.toggle("has-lyrics", lyricsState.lines.length > 0);
+  $("#immPlay").classList.toggle("playing", player.playing);
+}
+
+let immTimer = 0;
+function wakeImmersive() {
+  els.immersive.classList.add("awake");
+  clearTimeout(immTimer);
+  immTimer = setTimeout(() => els.immersive.classList.remove("awake"), 2600);
+}
+els.immersive.addEventListener("mousemove", wakeImmersive);
+els.immersive.addEventListener("click", (e) => { if (!e.target.closest("button")) wakeImmersive(); });
+$("#immPlay").addEventListener("click", () => player.toggle());
+$("#immPrev").addEventListener("click", () => player.prev());
+$("#immNextBtn").addEventListener("click", () => player.next());
+
 /* ───── lyrics ───── */
 
 async function loadLyrics() {
@@ -179,6 +196,8 @@ function updateLyrics(time) {
   if (index === lyricsState.index) return;
   lyricsState.index = index;
   els.immLyric.textContent = lines[index]?.text ?? "";
+  $("#immNext").textContent = lines[index + 1]?.text ?? "";
+  els.immLyric.classList.remove("in"); void els.immLyric.offsetWidth; els.immLyric.classList.add("in");
   if (els.np.hidden || lyricsHidden) return;
   $$("p", els.lyrics).forEach((p, i) => { p.classList.toggle("now", i === index); p.classList.toggle("past", i < index); });
   const active = els.lyrics.querySelector("p.now");
@@ -342,6 +361,8 @@ function renderAll() {
 }
 
 document.addEventListener("library-changed", () => { if (player.track) els.heart.classList.toggle("on", Boolean(library.get(player.track.id)?.favorite)); });
+player.on("track", () => { if (nowPlaying.immersive) renderImmersive(); });
+player.on("state", () => $("#immPlay").classList.toggle("playing", player.playing));
 player.on("track", () => { lyricsState.trackId = null; if (nowPlaying.open) renderAll(); else loadLyrics(); });
 player.on("state", renderControls);
 els.lyrics.addEventListener("wheel", () => { lyricsState.userScroll = performance.now(); }, { passive: true });
@@ -370,14 +391,16 @@ export function drawFrame(now) {
   const time = engine.currentTime;
   updateLyrics(time);
   if (!nowPlaying.open && !nowPlaying.immersive) return;
+  if (nowPlaying.immersive) els.immersive.style.setProperty("--kick", engine.kick.toFixed(3));
   if (nowPlaying.open) {
     const duration = engine.duration || player.track?.duration || 0;
     els.cur.textContent = fmtTime(time); els.dur.textContent = fmtTime(duration);
     if (!els.seek.matches(":active") && duration) { els.seek.value = Math.round(time / duration * 1000); paintRange(els.seek); }
   }
-  const frame = { viz: engine.viz, energies: engine.energies, enabled: engine.stemEnabled, kick: engine.kick, view: "3d", editing: false, now };
-  if (nowPlaying.open) stage.draw(frame);
-  if (nowPlaying.immersive) immersiveStage.draw(frame);
+  if (nowPlaying.immersive) {
+    const duration = engine.duration || player.track?.duration || 0;
+    $("#immBar").style.width = `${duration ? (time / duration) * 100 : 0}%`;
+  }
   els.cover.style.transform = `scale(${1 + engine.kick * 0.012})`;
 }
 

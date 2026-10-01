@@ -25,6 +25,7 @@ hmac = "0.12"
 sha2 = "0.10"
 base64 = "0.22"
 futures = "0.3"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 
 [profile.release]
 codegen-units = 1

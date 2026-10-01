@@ -141,3 +141,45 @@ export function confirmBox(title, text, confirm = "Удалить") {
   modal.showModal();
   return new Promise((resolve) => modal.addEventListener("close", () => resolve(modal.returnValue === "ok"), { once: true }));
 }
+
+/** Turns a raw cover colour into a background tone: same hue, deep but not black. */
+export function toneColor([r, g, b], depth = 0.42) {
+  const k = depth / Math.max(0.35, Math.max(r, g, b) / 255);
+  const c = (v) => Math.round(Math.min(255, v * k * 0.62));
+  return `rgb(${c(r)}, ${c(g)}, ${c(b)})`;
+}
+
+/** Cover colour via the native side (works for cached covers too), canvas as a fallback. */
+const colorCache = new Map();
+export async function coverTone(url, img, depth) {
+  if (!url) return null;
+  if (!colorCache.has(url)) {
+    const raw = await window.__TAURI__.core.invoke("cover_color", { url }).catch(() => null);
+    colorCache.set(url, raw);
+  }
+  const raw = colorCache.get(url);
+  return raw ? toneColor(raw, depth) : img ? coverColor(img, depth) : null;
+}
+
+/** Dominant colour of a loaded cover, darkened to a rich background tone. Null if unreadable. */
+export function coverColor(img, depth = 0.42) {
+  try {
+    const canvas = document.createElement("canvas"); canvas.width = canvas.height = 24;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, 24, 24);
+    const data = ctx.getImageData(0, 0, 24, 24).data;
+    let r = 0; let g = 0; let b = 0; let w = 0;
+    // The background continues the cover, so the colour comes from its outer frame.
+    for (let i = 0; i < data.length; i += 4) {
+      const x = (i / 4) % 24; const y = Math.floor(i / 4 / 24);
+      const edge = Math.min(x, 23 - x, y, 23 - y);
+      if (edge > 3) continue;
+      const max = Math.max(data[i], data[i + 1], data[i + 2]); const min = Math.min(data[i], data[i + 1], data[i + 2]);
+      const weight = (4 - edge) * (0.6 + (max - min) / 255);
+      r += data[i] * weight; g += data[i + 1] * weight; b += data[i + 2] * weight; w += weight;
+    }
+    return toneColor([r / w, g / w, b / w], depth);
+  } catch {
+    return null;
+  }
+}

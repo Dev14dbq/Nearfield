@@ -23,6 +23,7 @@ pub struct AppState {
     pub listening: AtomicBool,
     pub notify: tokio::sync::Notify,
     pub locks: tokio::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    pub colors: tokio::sync::Mutex<HashMap<String, [u8; 3]>>,
 }
 
 impl AppState {
@@ -89,6 +90,31 @@ async fn lyrics(state: State<'_, AppState>, track: Track) -> Res<Option<Lyrics>>
         db.set_lyrics(&track.id, found.as_ref())
     })?;
     Ok(found)
+}
+
+/// Dominant colour of a cover, computed natively (canvas reads are blocked for cached covers in WebKit).
+#[tauri::command]
+async fn cover_color(state: State<'_, AppState>, url: String) -> Res<Option<[u8; 3]>> {
+    if let Some(color) = state.colors.lock().await.get(&url) {
+        return Ok(Some(*color));
+    }
+    let bytes = state.http.get(&url).send().await.map_err(err)?.bytes().await.map_err(err)?;
+    let Ok(img) = image::load_from_memory(&bytes) else { return Ok(None) };
+    let small = img.resize_exact(24, 24, image::imageops::FilterType::Triangle).to_rgb8();
+    let (mut r, mut g, mut b, mut w) = (0f64, 0f64, 0f64, 0f64);
+    // The background continues the cover, so its colour comes from the cover's outer frame.
+    for (x, y, p) in small.enumerate_pixels() {
+        let edge = x.min(23 - x).min(y.min(23 - y));
+        if edge > 3 {
+            continue;
+        }
+        let [pr, pg, pb] = p.0.map(f64::from);
+        let weight = (4 - edge) as f64 * (0.6 + (pr.max(pg).max(pb) - pr.min(pg).min(pb)) / 255.0);
+        r += pr * weight; g += pg * weight; b += pb * weight; w += weight;
+    }
+    let color = [(r / w) as u8, (g / w) as u8, (b / w) as u8];
+    state.colors.lock().await.insert(url, color);
+    Ok(Some(color))
 }
 
 /* ───── library ───── */
@@ -383,12 +409,14 @@ pub fn run() {
                 listening: AtomicBool::new(false),
                 notify: tokio::sync::Notify::new(),
                 locks: tokio::sync::Mutex::new(HashMap::new()),
+                colors: tokio::sync::Mutex::new(HashMap::new()),
             });
             prep::spawn_worker(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             search,
+            cover_color,
             artist,
             album,
             library_status,

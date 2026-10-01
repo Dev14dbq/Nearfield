@@ -2,7 +2,7 @@ import { api, listen } from "./api.js";
 import { drawFrame, nowPlaying, openQueue, openSound, paintRange, syncVolume } from "./nowplaying.js";
 import { analyzeInBackground, player } from "./player.js";
 import { library, refreshPlaylists, toggleFavorite } from "./tracks.js";
-import { $, $$, artistNames, fmtTime, plural, toast } from "./ui.js";
+import { $, $$, artistNames, coverTone, fmtTime, plural, toast } from "./ui.js";
 import { currentView, goBack, navigate, renderSidePlaylists } from "./views.js";
 import "./wave.js";
 
@@ -22,7 +22,7 @@ function renderBar() {
   if (!track) return;
   els.title.textContent = track.title;
   els.artist.textContent = artistNames(track);
-  els.coverImg.src = track.cover || "";
+  if (els.coverImg.getAttribute("src") !== (track.cover || "")) els.coverImg.src = track.cover || "";
   els.coverImg.hidden = !track.cover;
   els.heart.classList.toggle("on", Boolean(library.get(track.id)?.favorite));
   renderState();
@@ -36,8 +36,8 @@ function renderState() {
   els.repeat.classList.toggle("one", player.repeat === "one");
   const s = player.settings;
   els.d3.classList.toggle("on", s.spatial);
-  els.sound.classList.toggle("on", s.rate !== 1 || s.fxReverb || s.ambience !== "none");
-  els.sound.textContent = s.rate < 1 ? "Slowed" : s.rate > 1 ? "Speed up" : s.fxReverb ? "Reverb" : "Звук";
+  els.sound.classList.toggle("on", s.rate !== 1 || s.fxReverb || s.ambience !== "none" || player.soundMode === "track");
+  els.sound.title = s.rate < 1 ? "Звук трека · Slowed" : s.rate > 1 ? "Звук трека · Speed up" : "Звук трека";
   $$(".trow").forEach((row) => {
     const now = row.dataset.id === player.track?.id;
     row.classList.toggle("playing", now);
@@ -75,6 +75,16 @@ els.seek.addEventListener("input", () => {
   player.engine.seek(Number(els.seek.value) / 1000 * duration);
   paintRange(els.seek);
 });
+els.coverImg.addEventListener("load", async () => {
+  const color = await coverTone(els.coverImg.getAttribute("src"), els.coverImg, 0.5);
+  if (color) $("#playerbar").style.setProperty("--pb-color", color);
+});
+let lastVolume = 0.85;
+$("#muteBtn").addEventListener("click", () => {
+  if (player.volume > 0) { lastVolume = player.volume; player.setVolume(0); } else player.setVolume(lastVolume || 0.85);
+  els.volume.value = Math.round(player.volume * 100); paintRange(els.volume); syncVolume();
+  $("#muteBtn").classList.toggle("muted", player.volume === 0);
+});
 els.volume.addEventListener("input", () => { player.setVolume(Number(els.volume.value) / 100); paintRange(els.volume); syncVolume(); });
 document.addEventListener("volume-changed", () => { els.volume.value = Math.round(player.volume * 100); paintRange(els.volume); });
 
@@ -104,7 +114,11 @@ document.addEventListener("keydown", (event) => {
     case "KeyD": player.toggleSpatial(); break;
     case "KeyL": if (player.track) toggleFavorite(player.track).then(renderBar); break;
     case "KeyF": if (player.track) nowPlaying.setImmersive(!nowPlaying.immersive); break;
-    case "Escape": if (nowPlaying.immersive) nowPlaying.setImmersive(false); else nowPlaying.hide(); break;
+    case "Escape":
+      if (nowPlaying.immersive) nowPlaying.setImmersive(false);
+      else if (nowPlaying.drawerOpen) nowPlaying.closeDrawer();
+      else nowPlaying.hide();
+      break;
     default: break;
   }
 });
