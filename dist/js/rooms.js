@@ -123,29 +123,31 @@ function tailNoise(length, sampleRate, room, seed, targetEnergy) {
   return out;
 }
 
-export async function renderLateTail(room, sampleRate, targetEnergy = null) {
+// Each direction's noise is convolved with the HRIR from the grid (measured from the browser or the
+// head model), so the tail does not depend on the browser rendering HRTF offline.
+export async function renderLateTail(room, grid, targetEnergy = null) {
+  const sampleRate = grid.sampleRate;
   const length = Math.ceil((room.tMix + Math.max(...room.rt) * 1.1) * sampleRate);
   const directions = fibonacciSphere(18, -35, 80);
   const total = targetEnergy ?? room.tailScale / criticalDistance(room) ** 2;
   const sources = directions.map((_, i) => tailNoise(length, sampleRate, room, 31337 + i * 101, total / directions.length));
-  return renderOffline(2, length + 1024, sampleRate, (offline) => {
+  return renderOffline(2, length + grid.length, sampleRate, (offline) => {
     directions.forEach((vector, i) => {
       const buffer = offline.createBuffer(1, length, sampleRate);
       buffer.copyToChannel(sources[i], 0);
       const source = offline.createBufferSource(); source.buffer = buffer;
-      const panner = offline.createPanner();
-      panner.panningModel = "HRTF"; panner.rolloffFactor = 0;
-      panner.positionX.value = vector.x; panner.positionY.value = vector.y; panner.positionZ.value = vector.z;
-      source.connect(panner); panner.connect(offline.destination); source.start();
+      const convolver = offline.createConvolver(); convolver.normalize = false;
+      convolver.buffer = grid.buffer(grid.nearest(vector));
+      source.connect(convolver); convolver.connect(offline.destination); source.start();
     });
-  }, (buffer) => energy(buffer.getChannelData(0), 0, Math.min(buffer.length, sampleRate)) > total * 1e-4);
+  }, () => true, 1);
 }
 
 // The "Reverb" effect: a lush, slightly dark binaural plate-like tail independent of the room.
 export const FX_REVERB = { id: "fx", rt: [3.4, 2.9, 2.1], tMix: 0.03 };
 
-export function renderFxReverb(sampleRate) {
-  return renderLateTail(FX_REVERB, sampleRate, 3);
+export function renderFxReverb(grid) {
+  return renderLateTail(FX_REVERB, grid, 3);
 }
 
 // Cache: the tail depends only on the room, early reflections also on the source distance.
@@ -164,7 +166,7 @@ export class RoomLibrary {
     if (!room?.dims) return null;
     const bucket = RoomLibrary.distanceBucket(distance);
     const earlyKey = `${room.id}|${bucket}`;
-    if (!this.tails.has(room.id)) this.tails.set(room.id, renderLateTail(room, this.grid.sampleRate));
+    if (!this.tails.has(room.id)) this.tails.set(room.id, renderLateTail(room, this.grid));
     if (!this.early.has(earlyKey)) this.early.set(earlyKey, buildEarlyZones(room, bucket, this.grid));
     const tail = await this.tails.get(room.id);
     return { key: earlyKey, zones: this.early.get(earlyKey), tail, room };

@@ -49,14 +49,14 @@ export function formatTime(seconds) {
 
 // Renders an offline graph, retrying while the browser is still loading its HRTF database
 // (until then HRTF panners output silence).
-export async function renderOffline(channels, length, sampleRate, setup, isValid = () => true) {
+export async function renderOffline(channels, length, sampleRate, setup, isValid = () => true, attempts = 4) {
   const OfflineContext = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-  for (let attempt = 0; attempt < 10; attempt += 1) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     const offline = new OfflineContext(channels, length, sampleRate);
     setup(offline);
     const rendered = await offline.startRendering();
     if (isValid(rendered)) return rendered;
-    await sleep(150 + attempt * 150);
+    if (attempt < attempts - 1) await sleep(150 + attempt * 150);
   }
   throw new Error("HRTF база браузера не загрузилась");
 }

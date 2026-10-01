@@ -2,7 +2,7 @@ import { renderAmbience } from "./ambience.js";
 import { analyzeTrack, sampleEnvelope } from "./analysis.js";
 import { blendFrames, choreograph } from "./choreography.js";
 import { computeParams, PARAM_COUNT, SpatialGraph } from "./graph.js";
-import { calibrate, measureGrid } from "./hrtf.js";
+import { calibrate, measureGrid, syntheticGrid } from "./hrtf.js";
 import { findRoom, STEM_NAMES, VOICES } from "./presets.js";
 import { renderFxReverb, RoomLibrary } from "./rooms.js";
 import { clamp, easeInOut } from "./util.js";
@@ -47,7 +47,9 @@ export class Engine {
   async init() {
     if (this.ready) return this.ready;
     const AudioContext = window.AudioContext || window.webkitAudioContext;
-    this.context = new AudioContext({ latencyHint: "balanced" });
+    // The engine always runs at 48 kHz: the browser resamples to the output device (96/192 kHz DACs
+    // included). Everything was measured and tuned at this rate, and it is 2–4× lighter on the CPU.
+    try { this.context = new AudioContext({ latencyHint: "balanced", sampleRate: 48000 }); } catch { this.context = new AudioContext({ latencyHint: "balanced" }); }
     this.ready = this.build();
     return this.ready;
   }
@@ -55,11 +57,17 @@ export class Engine {
   async build() {
     const sampleRate = this.context.sampleRate;
     this.hooks.status("КАЛИБРОВКА HRTF", true);
-    this.calibration = await calibrate(sampleRate).catch((error) => {
-      console.warn("HRTF calibration failed", error);
-      return { latency: 0, eq: [], presence: [], frontEnergy: 1 };
-    });
-    this.grid = await measureGrid(sampleRate);
+    // A live HRTF panner keeps the browser's HRTF database loaded for the offline measurements too.
+    this.hrtfKeepAlive = this.context.createPanner();
+    this.hrtfKeepAlive.panningModel = "HRTF";
+    let grid = await measureGrid(sampleRate).catch((error) => { console.warn("HRIR grid measurement failed", sampleRate, error); return null; });
+    let calibration = await calibrate(sampleRate).catch((error) => { console.warn("HRTF calibration failed", sampleRate, error); return null; });
+    // Never block playback on measurements: fall back to what we know, then to a spherical-head model.
+    calibration ??= { latency: grid?.latency ?? 0.0064, eq: [], presence: [], frontEnergy: grid?.frontEnergy ?? 0.63 };
+    grid ??= syntheticGrid(sampleRate, { latency: calibration.latency, frontEnergy: calibration.frontEnergy });
+    this.calibration = calibration;
+    this.grid = grid;
+    this.offlineHrtf = grid.measured;
     this.rooms = new RoomLibrary(this.grid);
     this.graph = new SpatialGraph(this.context, this.calibration, { meters: true });
     STEM_NAMES.forEach((stem) => { this.graph.stems[stem].stemGain.gain.value = this.stemEnabled[stem] ? 1 : 0; });
@@ -67,6 +75,10 @@ export class Engine {
     this.updatePositions(0);
     this.graph.setNow(this.values);
     this.hooks.status(null);
+    if (!grid.measured) {
+      this.hooks.status("HRTF · УПРОЩЁННАЯ МОДЕЛЬ КОМНАТ", false, "hrtf");
+      setTimeout(() => this.hooks.status(null, false, "hrtf"), 6000);
+    }
     this.applyRoom();
     this.applyAmbience();
   }
@@ -121,12 +133,12 @@ export class Engine {
   }
 
   fxBuffer() {
-    this.fxPromise ??= renderFxReverb(this.context.sampleRate);
+    this.fxPromise ??= renderFxReverb(this.grid);
     return this.fxPromise;
   }
 
   ambienceBuffer(id) {
-    if (!this.ambienceCache.has(id)) this.ambienceCache.set(id, renderAmbience(id, this.context.sampleRate));
+    if (!this.ambienceCache.has(id)) this.ambienceCache.set(id, renderAmbience(id, this.grid));
     return this.ambienceCache.get(id);
   }
 

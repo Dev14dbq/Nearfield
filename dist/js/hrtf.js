@@ -1,5 +1,9 @@
 import { cartesian, clamp, energy, renderOffline } from "./util.js";
 
+// The HRTF panner's latency and impulse length grow with the sample rate (≈ 6.3 ms ≈ 1200 samples
+// at 192 kHz), so every measurement window is scaled to the rate.
+const rateScale = (sampleRate) => Math.max(1, Math.ceil(sampleRate / 48000));
+
 /*
   Everything here measures the browser's own HRTF set (the one PannerNode uses), so that rooms,
   ambiences and EQ built from it line up perfectly with the live sources.
@@ -21,7 +25,7 @@ function placePanner(panner, az, el) {
 }
 
 // Renders a unit impulse through an HRTF panner for every direction, spaced `window` samples apart.
-async function impulseResponses(sampleRate, directions, window) {
+async function impulseResponses(sampleRate, directions, window, attempts) {
   const rendered = await renderOffline(2, window * directions.length, sampleRate, (offline) => {
     const impulse = offline.createBuffer(1, 1, sampleRate);
     impulse.getChannelData(0)[0] = 1;
@@ -33,7 +37,7 @@ async function impulseResponses(sampleRate, directions, window) {
       source.connect(panner); panner.connect(offline.destination);
       source.start(i * window / sampleRate);
     });
-  }, (buffer) => directions.every((_, i) => energy(buffer.getChannelData(0), i * window, (i + 1) * window) + energy(buffer.getChannelData(1), i * window, (i + 1) * window) > 1e-6));
+  }, (buffer) => directions.every((_, i) => energy(buffer.getChannelData(0), i * window, (i + 1) * window) + energy(buffer.getChannelData(1), i * window, (i + 1) * window) > 1e-6), attempts);
   return directions.map((_, i) => [
     rendered.getChannelData(0).slice(i * window, (i + 1) * window),
     rendered.getChannelData(1).slice(i * window, (i + 1) * window),
@@ -46,7 +50,7 @@ export async function calibrate(sampleRate) {
   const fitContext = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 128, sampleRate);
   // Weighted like the actual layout: centre voices up front, kit and hats at ±20–45°, wide music and doubles at ±70–90°.
   const responses = [[0, 4], [-20, 1], [20, 1], [-45, 1], [45, 1], [-70, 0.8], [70, 0.8], [-90, 0.8], [90, 0.8]];
-  const irs = await impulseResponses(sampleRate, responses.map(([az]) => [az, 0]), 8192);
+  const irs = await impulseResponses(sampleRate, responses.map(([az]) => [az, 0]), 8192 * rateScale(sampleRate), 3);
   const [frontL, frontR] = irs[0];
   let peak = 0; let peakIndex = 0;
   for (let i = 0; i < frontL.length; i += 1) {
@@ -108,20 +112,28 @@ export async function calibrate(sampleRate) {
   return { latency: peakIndex / sampleRate, eq: global.bands, presence: presence.bands, frontEnergy: energy(frontL) + energy(frontR) };
 }
 
-// A grid of measured HRIRs (55 directions) used to render reflections in JavaScript.
-export async function measureGrid(sampleRate) {
+const GRID_DIRECTIONS = (() => {
   const directions = [];
   for (let az = 0; az < 360; az += 15) directions.push([az, 0]);
   for (const el of [-30, 30]) for (let az = 0; az < 360; az += 30) directions.push([az, el]);
   for (let az = 0; az < 360; az += 60) directions.push([az, 60]);
   directions.push([0, 90]);
-  const length = 640;
-  const irs = await impulseResponses(sampleRate, directions, 1024);
+  return directions;
+})();
+
+function makeGrid(sampleRate, length, left, right, measured) {
+  const front = energy(left[0]) + energy(right[0]);
+  let peak = 0; let latencyIndex = 0;
+  for (let i = 0; i < length; i += 1) {
+    const v = Math.abs(left[0][i]) + Math.abs(right[0][i]);
+    if (v > peak) { peak = v; latencyIndex = i; }
+  }
+  const buffers = new Map();
   return {
-    sampleRate, length,
-    vectors: directions.map(([az, el]) => cartesian(az, el, 1)),
-    left: irs.map(([l]) => l.slice(0, length)),
-    right: irs.map(([, r]) => r.slice(0, length)),
+    sampleRate, length, measured, left, right,
+    latency: latencyIndex / sampleRate,
+    frontEnergy: front,
+    vectors: GRID_DIRECTIONS.map(([az, el]) => cartesian(az, el, 1)),
     nearest({ x, y, z }) {
       let best = 0; let bestDot = -Infinity;
       const n = Math.hypot(x, y, z) || 1;
@@ -131,5 +143,57 @@ export async function measureGrid(sampleRate) {
       });
       return best;
     },
+    // Stereo HRIR as an AudioBuffer, for ConvolverNodes (works in any context of this rate).
+    buffer(index) {
+      if (!buffers.has(index)) {
+        const buffer = new AudioBuffer({ numberOfChannels: 2, length, sampleRate });
+        buffer.copyToChannel(left[index], 0); buffer.copyToChannel(right[index], 1);
+        buffers.set(index, buffer);
+      }
+      return buffers.get(index);
+    },
   };
+}
+
+// A grid of measured HRIRs (55 directions) used to render reflections, tails and ambiences.
+export async function measureGrid(sampleRate) {
+  const scale = rateScale(sampleRate);
+  const length = 640 * scale;
+  const irs = await impulseResponses(sampleRate, GRID_DIRECTIONS, 2048 * scale, 4);
+  return makeGrid(sampleRate, length, irs.map(([l]) => l.slice(0, length)), irs.map(([, r]) => r.slice(0, length)), true);
+}
+
+/*
+  Fallback when the browser cannot render its HRTF offline: a spherical-head model
+  (Brown & Duda, 1998) — Woodworth interaural delay plus a one-pole/one-zero head-shadow filter
+  per ear. Levels and latency are matched to the live panner where they are known.
+*/
+export function syntheticGrid(sampleRate, { latency = 0.0064, frontEnergy = 0.63 } = {}) {
+  const length = 640 * rateScale(sampleRate);
+  const radius = 0.0875; const c = 343;
+  const w0 = c / radius; const K = sampleRate / w0;
+  const ear = (vector, side) => {
+    const cosTheta = clamp(side * vector.x, -1, 1);
+    const theta = Math.acos(cosTheta);
+    const alpha = 1.05 + 0.95 * Math.cos(theta / (5 * Math.PI / 6) * Math.PI);
+    const extra = theta < Math.PI / 2 ? -cosTheta * radius / c : (theta - Math.PI / 2) * radius / c;
+    const delay = (latency + radius / c + extra) * sampleRate;
+    const impulse = new Float32Array(length);
+    const i0 = Math.floor(delay); const frac = delay - i0;
+    if (i0 + 1 < length) { impulse[i0] = 1 - frac; impulse[i0 + 1] = frac; }
+    const b0 = 1 + alpha * K; const b1 = 1 - alpha * K; const a0 = 1 + K; const a1 = 1 - K;
+    const out = new Float32Array(length);
+    let x1 = 0; let y1 = 0;
+    for (let i = 0; i < length; i += 1) {
+      const y = (b0 * impulse[i] + b1 * x1 - a1 * y1) / a0;
+      x1 = impulse[i]; y1 = y; out[i] = y;
+    }
+    return out;
+  };
+  const vectors = GRID_DIRECTIONS.map(([az, el]) => cartesian(az, el, 1));
+  const left = vectors.map((v) => ear(v, -1));
+  const right = vectors.map((v) => ear(v, 1));
+  const scale = Math.sqrt(frontEnergy / (energy(left[0]) + energy(right[0]) || 1));
+  [...left, ...right].forEach((ir) => { for (let i = 0; i < ir.length; i += 1) ir[i] *= scale; });
+  return makeGrid(sampleRate, length, left, right, false);
 }

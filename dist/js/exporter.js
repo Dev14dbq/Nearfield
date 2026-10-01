@@ -13,6 +13,8 @@ const CURVE_RATE = 100;
 
 export async function renderBinaural(engine, { maxSeconds = Infinity, onProgress = () => {}, raw = false } = {}) {
   if (!engine.analysis || !Object.keys(engine.buffers).length) throw new Error("Трек ещё не загружен");
+  // The export renders the live HRTF panners offline; if the browser cannot do that, the file would be flat.
+  if (!engine.offlineHrtf) throw new Error("этот браузер не отдаёт HRTF в офлайн-рендер, 3D-версия получилась бы плоской. Открой плеер в Chrome");
   const sampleRate = engine.context.sampleRate;
   const s = JSON.parse(JSON.stringify(engine.settings));
   const rate = engine.rate;

@@ -187,7 +187,8 @@ function normalize(channels, ceiling = 0.32) {
   channels.forEach((data) => { for (let i = 0; i < data.length; i += 1) data[i] = ceiling * Math.tanh(data[i] * scale / ceiling); });
 }
 
-export async function renderAmbience(id, sampleRate) {
+export async function renderAmbience(id, grid) {
+  const sampleRate = grid.sampleRate;
   const generator = GENERATORS[id];
   if (!generator) return null;
   const rand = seededRandom(id.split("").reduce((s, c) => s * 31 + c.charCodeAt(0), 7));
@@ -201,11 +202,9 @@ export async function renderAmbience(id, sampleRate) {
         const buffer = offline.createBuffer(1, spec.length, sampleRate);
         buffer.copyToChannel(signal, 0);
         const source = offline.createBufferSource(); source.buffer = buffer; source.loop = true;
-        const panner = offline.createPanner();
-        panner.panningModel = "HRTF"; panner.rolloffFactor = 0;
-        const { x, y, z } = cartesian(az, el, 1);
-        panner.positionX.value = x; panner.positionY.value = y; panner.positionZ.value = z;
-        source.connect(panner); panner.connect(offline.destination); source.start();
+        const convolver = offline.createConvolver(); convolver.normalize = false;
+        convolver.buffer = grid.buffer(grid.nearest(cartesian(az, el, 1)));
+        source.connect(convolver); convolver.connect(offline.destination); source.start();
       });
     }, (buffer) => buffer.getChannelData(0).subarray(spec.length).some((v) => v !== 0));
     left = rendered.getChannelData(0).slice(spec.length);
