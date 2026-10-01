@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#090a0c" />
+    <meta
+      name="description"
+      content="Nearfield — локальный HRTF-плеер для живой пространственной сцены в наушниках."
+    />
+    <title>Nearfield — spatial headphone player</title>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23090a0c'/%3E%3Cpath d='M6 17a10 10 0 0 1 20 0v7h-4v-7a6 6 0 0 0-12 0v7H6z' fill='%23dfff4f'/%3E%3C/svg%3E"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="Nearfield — на главную">
+          <span class="brand-mark" aria-hidden="true">
+            <span></span><span></span><span></span><span></span><span></span>
+          </span>
+          <span>NEARFIELD</span>
+          <small>LAB / 01</small>
+        </a>
+
+        <div class="topbar-actions">
+          <span class="engine-status"><i></i><span id="engineStatus">ДВИЖОК ГОТОВ</span></span>
+          <button class="icon-button" id="infoButton" type="button" aria-label="О технологии" title="О технологии">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.2v.2"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <main>
+        <section class="now-playing" aria-labelledby="trackTitle">
+          <div class="track-visual">
+            <div class="cover-wrap">
+              <img id="cover" src="assets/covers/poker-face.jpg" alt="Обложка Poker Face" />
+              <div class="cover-shine"></div>
+              <span class="live-pill">AI STEMS LIVE</span>
+            </div>
+            <div class="track-copy">
+              <p class="eyebrow">СЕЙЧАС ИГРАЕТ</p>
+              <h1 id="trackTitle">Poker Face</h1>
+              <p id="trackArtist">Lady Gaga</p>
+              <div class="format-line">
+                <span>DEMUCS AI</span><i></i><span>4 STEMS → 14 SOURCES</span><i></i><span id="bpmValue">— BPM</span><i></i><span>BEAT-SYNC HRTF</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="waveform" aria-label="Визуализация аудио">
+            <canvas id="spectrumCanvas"></canvas>
+            <span class="waveform-label left">L</span>
+            <span class="waveform-label right">R</span>
+          </div>
+
+          <div class="timeline-row">
+            <span id="currentTime">0:00</span>
+            <input id="seek" type="range" min="0" max="1000" value="0" aria-label="Позиция трека" />
+            <span id="duration">3:57</span>
+          </div>
+
+          <div class="transport">
+            <button class="transport-small" id="prevButton" type="button" aria-label="Предыдущий трек">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14M18 6l-9 6 9 6z"/></svg>
+            </button>
+            <button class="play-button" id="playButton" type="button" aria-label="Воспроизвести">
+              <svg class="play-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+              <svg class="pause-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM14 5h4v14h-4z"/></svg>
+            </button>
+            <button class="transport-small" id="nextButton" type="button" aria-label="Следующий трек">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5v14M6 6l9 6-9 6z"/></svg>
+            </button>
+          </div>
+        </section>
+
+        <aside class="control-panel" aria-label="Настройка пространственного звука">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">ПРОСТРАНСТВО</p>
+              <h2>AI-сцена</h2>
+            </div>
+            <label class="switch" title="Включить или выключить пространственную обработку">
+              <input id="spatialToggle" type="checkbox" checked />
+              <span></span>
+              <b>3D</b>
+            </label>
+          </div>
+
+          <div class="scene-card">
+            <canvas id="stageCanvas" aria-label="Положение звуковых источников. Проведите пальцем, чтобы повернуть сцену."></canvas>
+            <div class="scene-instruction">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 11V7.5a1.5 1.5 0 0 1 3 0V11m0-3.5a1.5 1.5 0 0 1 3 0V11m0-2.5a1.5 1.5 0 0 1 3 0V14l1.3-1.1a1.7 1.7 0 0 1 2.7 1.4V16c0 4-2.5 6-6.5 6H13c-2.3 0-4.2-1-5.5-2.8L4 14.5A1.5 1.5 0 0 1 6.4 13L8 14.8z"/></svg>
+              КРУТИ СЦЕНУ
+            </div>
+          </div>
+
+          <div class="stem-rack" id="stemRack" aria-label="AI-дорожки">
+            <button type="button" data-stem="vocals" class="stem-chip active" aria-pressed="true">
+              <span class="stem-dot vocals"></span><span><b>Вокал</b><small>впереди</small></span><i><em></em></i>
+            </button>
+            <button type="button" data-stem="bass" class="stem-chip active" aria-pressed="true">
+              <span class="stem-dot bass"></span><span><b>Бас</b><small>по центру</small></span><i><em></em></i>
+            </button>
+            <button type="button" data-stem="drums" class="stem-chip active" aria-pressed="true">
+              <span class="stem-dot drums"></span><span><b>Ударные</b><small>под бит</small></span><i><em></em></i>
+            </button>
+            <button type="button" data-stem="other" class="stem-chip active" aria-pressed="true">
+              <span class="stem-dot other"></span><span><b>Музыка</b><small>вокруг</small></span><i><em></em></i>
+            </button>
+          </div>
+
+          <div class="preset-tabs" role="group" aria-label="Размер комнаты">
+            <button data-scene="intimate" type="button">Близко</button>
+            <button data-scene="studio" type="button" class="active">Студия</button>
+            <button data-scene="stage" type="button">Сцена</button>
+          </div>
+
+          <div class="control-block">
+            <div class="control-label">
+              <span>Глубина эффекта</span>
+              <output id="depthValue">72%</output>
+            </div>
+            <input id="depth" type="range" min="0" max="100" value="72" aria-label="Глубина пространственного эффекта" />
+          </div>
+
+          <div class="control-block">
+            <div class="control-label">
+              <span>Живое движение</span>
+              <output id="motionValue">64%</output>
+            </div>
+            <input id="motion" type="range" min="0" max="100" value="64" aria-label="Интенсивность движения источников" />
+          </div>
+
+          <div class="control-block">
+            <div class="control-label">
+              <span>Комната</span>
+              <output id="roomValue">24%</output>
+            </div>
+            <input id="room" type="range" min="0" max="55" value="24" aria-label="Количество отражений комнаты" />
+          </div>
+
+          <button class="tracking-button" id="trackingButton" type="button">
+            <span>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7v3a7 7 0 0 0 14 0V9a7 7 0 0 0-7-7zM5 10H2m20 0h-3M7 19l-2 3m12-3 2 3"/></svg>
+              <span><b>Поворот головы</b><small>гироскоп телефона</small></span>
+            </span>
+            <em id="trackingState">ВЫКЛ</em>
+          </button>
+
+          <div class="headphone-profile">
+            <div class="headphone-copy">
+              <span class="headphone-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0 1 16 0v2M4 14h3v6H4zm13 0h3v6h-3z"/></svg>
+              </span>
+              <span><b>Marshall Major V</b><small>профиль компенсации · −4 dB</small></span>
+            </div>
+            <label class="switch compact" title="Профиль Marshall Major V">
+              <input id="headphoneToggle" type="checkbox" checked />
+              <span></span>
+            </label>
+          </div>
+        </aside>
+
+        <section class="library" aria-labelledby="libraryTitle">
+          <div class="section-title">
+            <div>
+              <p class="eyebrow">ТВОЯ СЕССИЯ</p>
+              <h2 id="libraryTitle">Два трека для проверки</h2>
+            </div>
+            <label class="add-track">
+              <input id="fileInput" type="file" accept="audio/*" />
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+              ДОБАВИТЬ СВОЙ
+            </label>
+          </div>
+          <div class="track-list" id="trackList"></div>
+        </section>
+
+        <section class="signal-flow" aria-label="Схема обработки сигнала">
+          <span>DEMUCS AI</span><i></i><span>BEAT MAP</span><i></i><span>MID / SIDE</span><i></i><span>14× HRTF</span><i></i><span>HRTF EQ</span><i></i><span>ROOM IR</span><i></i><span>MAJOR V EQ</span>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="infoDialog">
+      <button class="dialog-close" id="dialogClose" type="button" aria-label="Закрыть">×</button>
+      <p class="eyebrow">ЧТО ПРОИСХОДИТ СО ЗВУКОМ</p>
+      <h2>Это не вращалка.</h2>
+      <p>Demucs AI заранее отделил вокал, бас, ударные и остальные инструменты. Плеер находит темп, сильные доли и границы фраз, а каждую дорожку раскладывает на центр и стерео-бока — всего 14 HRTF-источников.</p>
+      <p>Лид-вокал стоит неподвижно перед тобой, бэки качаются по бокам, хэты маятником ходят под бит и раз в 8 тактов облетают голову, малый барабан подпрыгивает вверх, а музыка отъезжает назад на каждой бочке. Низ ниже 140 Гц идёт мимо HRTF, а окраска HRTF браузера измеряется и компенсируется — 3D и 2D звучат одинаково громко и одинаково ярко.</p>
+      <p>Профиль Major V — безопасная модельная настройка, а не индивидуальное измерение именно твоей пары. В приложении Marshall лучше оставить эквалайзер ровным, чтобы коррекция не применялась дважды.</p>
+      <button id="dialogConfirm" class="primary-action" type="button">ПОНЯТНО</button>
+    </dialog>
+
+    <div class="audio-gate" id="audioGate" hidden>
+      <span>Браузер приостановил аудио</span>
+      <button type="button" id="resumeButton">ПРОДОЛЖИТЬ</button>
+    </div>
+
+    <script src="app.js?v=8"></script>
+  </body>
+</html>
