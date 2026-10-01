@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#090a0c" />
     <meta
       name="description"
-      content="Nearfield — локальный HRTF-плеер для живой пространственной сцены в наушниках."
+      content="Nearfield — локальный HRTF-плеер: AI-стемы, бинауральные комнаты, 8D и трекинг головы."
     />
     <title>Nearfield — spatial headphone player</title>
     <link
@@ -20,7 +20,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=9" />
   </head>
   <body>
     <div class="app-shell">
@@ -30,11 +30,14 @@
             <span></span><span></span><span></span><span></span><span></span>
           </span>
           <span>NEARFIELD</span>
-          <small>LAB / 01</small>
+          <small>LAB / 02</small>
         </a>
 
         <div class="topbar-actions">
           <span class="engine-status"><i></i><span id="engineStatus">ДВИЖОК ГОТОВ</span></span>
+          <button class="icon-button" id="immersiveButtonTop" type="button" aria-label="Режим погружения" title="Погружение (F)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12z"/><path d="M4 4l16 16"/></svg>
+          </button>
           <button class="icon-button" id="infoButton" type="button" aria-label="О технологии" title="О технологии">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.2v.2"/></svg>
           </button>
@@ -54,7 +57,7 @@
               <h1 id="trackTitle">Poker Face</h1>
               <p id="trackArtist">Lady Gaga</p>
               <div class="format-line">
-                <span>DEMUCS AI</span><i></i><span>4 STEMS → 14 SOURCES</span><i></i><span id="bpmValue">— BPM</span><i></i><span>BEAT-SYNC HRTF</span>
+                <span id="modeBadge">ВНУТРИ</span><i></i><span id="roomBadge">СТУДИЯ</span><i></i><span id="bpmValue">— BPM</span><i></i><span id="rateBadge">1×</span>
               </div>
             </div>
           </div>
@@ -85,13 +88,24 @@
           </div>
         </section>
 
+        <section class="experiences" aria-labelledby="experienceTitle">
+          <div class="section-title">
+            <div>
+              <p class="eyebrow">ОДНО НАЖАТИЕ</p>
+              <h2 id="experienceTitle">Где ты хочешь оказаться?</h2>
+            </div>
+            <span class="ab-hint">клавиша <kbd>D</kbd> — сравнить с 2D</span>
+          </div>
+          <div class="experience-grid" id="experienceGrid"></div>
+        </section>
+
         <aside class="control-panel" aria-label="Настройка пространственного звука">
           <div class="panel-heading">
             <div>
               <p class="eyebrow">ПРОСТРАНСТВО</p>
-              <h2>AI-сцена</h2>
+              <h2>3D-сцена</h2>
             </div>
-            <label class="switch" title="Включить или выключить пространственную обработку">
+            <label class="switch" title="Сравнить с обычным стерео (D)">
               <input id="spatialToggle" type="checkbox" checked />
               <span></span>
               <b>3D</b>
@@ -99,11 +113,16 @@
           </div>
 
           <div class="scene-card">
-            <canvas id="stageCanvas" aria-label="Положение звуковых источников. Проведите пальцем, чтобы повернуть сцену."></canvas>
-            <div class="scene-instruction">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 11V7.5a1.5 1.5 0 0 1 3 0V11m0-3.5a1.5 1.5 0 0 1 3 0V11m0-2.5a1.5 1.5 0 0 1 3 0V14l1.3-1.1a1.7 1.7 0 0 1 2.7 1.4V16c0 4-2.5 6-6.5 6H13c-2.3 0-4.2-1-5.5-2.8L4 14.5A1.5 1.5 0 0 1 6.4 13L8 14.8z"/></svg>
-              КРУТИ СЦЕНУ
+            <canvas id="stageCanvas" aria-label="Положение звуковых источников. Потяни, чтобы повернуть сцену."></canvas>
+            <div class="view-toggle" role="group" aria-label="Вид сцены">
+              <button type="button" data-view="3d">3D</button>
+              <button type="button" data-view="top">СВЕРХУ</button>
             </div>
+            <button class="scene-expand" id="immersiveButton" type="button" aria-label="Режим погружения" title="Погружение (F)">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+            </button>
+            <video id="cameraPreview" class="camera-preview" playsinline muted hidden></video>
+            <div class="scene-instruction" id="sceneInstruction">ПОТЯНИ — ПОВЕРНУТЬ СЦЕНУ · ДВОЙНОЙ КЛИК — СБРОС</div>
           </div>
 
           <div class="stem-rack" id="stemRack" aria-label="AI-дорожки">
@@ -111,7 +130,7 @@
               <span class="stem-dot vocals"></span><span><b>Вокал</b><small>впереди</small></span><i><em></em></i>
             </button>
             <button type="button" data-stem="bass" class="stem-chip active" aria-pressed="true">
-              <span class="stem-dot bass"></span><span><b>Бас</b><small>по центру</small></span><i><em></em></i>
+              <span class="stem-dot bass"></span><span><b>Бас</b><small>снизу</small></span><i><em></em></i>
             </button>
             <button type="button" data-stem="drums" class="stem-chip active" aria-pressed="true">
               <span class="stem-dot drums"></span><span><b>Ударные</b><small>под бит</small></span><i><em></em></i>
@@ -121,43 +140,78 @@
             </button>
           </div>
 
-          <div class="preset-tabs" role="group" aria-label="Размер комнаты">
-            <button data-scene="intimate" type="button">Близко</button>
-            <button data-scene="studio" type="button" class="active">Студия</button>
-            <button data-scene="stage" type="button">Сцена</button>
-          </div>
-
-          <div class="control-block">
-            <div class="control-label">
-              <span>Глубина эффекта</span>
-              <output id="depthValue">72%</output>
+          <div class="panel-section">
+            <div class="section-head"><span>Движение</span><small id="modeHint"></small></div>
+            <div class="chip-grid four" id="modeChips" role="group" aria-label="Режим движения"></div>
+            <div class="chip-line" id="orbitRow" hidden>
+              <span>Один оборот</span>
+              <div class="chip-grid four compact" id="orbitChips" role="group" aria-label="Скорость орбиты"></div>
             </div>
-            <input id="depth" type="range" min="0" max="100" value="72" aria-label="Глубина пространственного эффекта" />
-          </div>
-
-          <div class="control-block">
-            <div class="control-label">
-              <span>Живое движение</span>
-              <output id="motionValue">64%</output>
+            <div class="control-block">
+              <div class="control-label"><span>Ширина сцены</span><output id="widthValue"></output></div>
+              <input id="width" type="range" min="50" max="150" value="110" aria-label="Ширина сцены" />
             </div>
-            <input id="motion" type="range" min="0" max="100" value="64" aria-label="Интенсивность движения источников" />
-          </div>
-
-          <div class="control-block">
-            <div class="control-label">
-              <span>Комната</span>
-              <output id="roomValue">24%</output>
+            <div class="control-block">
+              <div class="control-label"><span>Дистанция</span><output id="distanceValue"></output></div>
+              <input id="distance" type="range" min="0" max="100" value="30" aria-label="Дистанция до музыки" />
             </div>
-            <input id="room" type="range" min="0" max="55" value="24" aria-label="Количество отражений комнаты" />
+            <div class="control-block">
+              <div class="control-label"><span>Живость движения</span><output id="motionValue"></output></div>
+              <input id="motion" type="range" min="0" max="100" value="45" aria-label="Интенсивность движения" />
+            </div>
           </div>
 
-          <button class="tracking-button" id="trackingButton" type="button">
-            <span>
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7v3a7 7 0 0 0 14 0V9a7 7 0 0 0-7-7zM5 10H2m20 0h-3M7 19l-2 3m12-3 2 3"/></svg>
-              <span><b>Поворот головы</b><small>гироскоп телефона</small></span>
-            </span>
-            <em id="trackingState">ВЫКЛ</em>
-          </button>
+          <div class="panel-section">
+            <div class="section-head"><span>Комната</span><small id="roomHint"></small></div>
+            <div class="chip-grid four" id="roomChips" role="group" aria-label="Акустика комнаты"></div>
+            <div class="control-block">
+              <div class="control-label"><span>Отражения</span><output id="roomAmtValue"></output></div>
+              <input id="roomAmt" type="range" min="0" max="300" value="110" aria-label="Количество отражений" />
+            </div>
+          </div>
+
+          <div class="panel-section">
+            <div class="section-head"><span>Звук</span><small>скорость меняет и тон</small></div>
+            <div class="chip-grid five" id="rateChips" role="group" aria-label="Скорость"></div>
+            <div class="control-block">
+              <div class="control-label"><span>3D-чёткость</span><output id="cueValue"></output></div>
+              <input id="cue" type="range" min="0" max="100" value="65" aria-label="Усиление пространственных признаков" />
+            </div>
+            <div class="control-block">
+              <div class="control-label"><span>Бас</span><output id="bassValue"></output></div>
+              <input id="bass" type="range" min="0" max="18" value="2" aria-label="Подъём баса" />
+            </div>
+          </div>
+
+          <div class="panel-section">
+            <div class="section-head"><span>Атмосфера</span><small>звуки вокруг</small></div>
+            <div class="chip-grid four" id="ambienceChips" role="group" aria-label="Атмосфера"></div>
+            <div class="control-block" id="ambienceLevelBlock">
+              <div class="control-label"><span>Громкость атмосферы</span><output id="ambienceLevelValue"></output></div>
+              <input id="ambienceLevel" type="range" min="0" max="100" value="50" aria-label="Громкость атмосферы" />
+            </div>
+          </div>
+
+          <div class="tracking-row">
+            <button class="tracking-button" id="cameraButton" type="button">
+              <span>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8a2 2 0 0 1 2-2h2l1.5-2h7L17 6h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.5"/></svg>
+                <span><b>Камера</b><small>трекинг головы</small></span>
+              </span>
+              <em id="cameraState">ВЫКЛ</em>
+            </button>
+            <button class="tracking-button" id="gyroButton" type="button">
+              <span>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7v3a7 7 0 0 0 14 0V9a7 7 0 0 0-7-7zM5 10H2m20 0h-3M7 19l-2 3m12-3 2 3"/></svg>
+                <span><b>Гироскоп</b><small>телефон на голове</small></span>
+              </span>
+              <em id="gyroState">ВЫКЛ</em>
+            </button>
+          </div>
+          <div class="recenter-row" id="recenterRow" hidden>
+            <button class="recenter" id="recenterButton" type="button">ЦЕНТР · C</button>
+            <button class="recenter" id="invertButton" type="button" title="Если сцена поворачивается вместе с головой, а не остаётся на месте">ИНВЕРСИЯ</button>
+          </div>
 
           <div class="headphone-profile">
             <div class="headphone-copy">
@@ -171,13 +225,19 @@
               <span></span>
             </label>
           </div>
+
+          <button class="export-button" id="exportButton" type="button">
+            <span class="export-fill" id="exportFill"></span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14"/></svg>
+            <span id="exportLabel">СКАЧАТЬ 3D-ВЕРСИЮ · WAV</span>
+          </button>
         </aside>
 
         <section class="library" aria-labelledby="libraryTitle">
           <div class="section-title">
             <div>
               <p class="eyebrow">ТВОЯ СЕССИЯ</p>
-              <h2 id="libraryTitle">Два трека для проверки</h2>
+              <h2 id="libraryTitle">Треки</h2>
             </div>
             <label class="add-track">
               <input id="fileInput" type="file" accept="audio/*" />
@@ -189,18 +249,33 @@
         </section>
 
         <section class="signal-flow" aria-label="Схема обработки сигнала">
-          <span>DEMUCS AI</span><i></i><span>BEAT MAP</span><i></i><span>MID / SIDE</span><i></i><span>14× HRTF</span><i></i><span>HRTF EQ</span><i></i><span>ROOM IR</span><i></i><span>MAJOR V EQ</span>
+          <span>DEMUCS AI</span><i></i><span>BEAT MAP</span><i></i><span>CHOREO</span><i></i><span>14× HRTF</span><i></i><span>CUES</span><i></i><span>ER · 8 ZONES</span><i></i><span>BINAURAL TAIL</span><i></i><span>HEAD TRACK</span><i></i><span>MAJOR V EQ</span>
         </section>
       </main>
+    </div>
+
+    <div class="immersive" id="immersive" hidden>
+      <canvas id="immersiveCanvas" aria-hidden="true"></canvas>
+      <div class="immersive-top">
+        <span id="immersiveTitle">Poker Face</span>
+        <small id="immersiveMode">ВНУТРИ · СТУДИЯ</small>
+      </div>
+      <p class="immersive-hint" id="immersiveHint">Закрой глаза.</p>
+      <div class="immersive-bottom">
+        <button type="button" id="immersivePlay" class="immersive-button">ПАУЗА</button>
+        <button type="button" id="immersiveExit" class="immersive-button">ВЫЙТИ · ESC</button>
+      </div>
     </div>
 
     <dialog id="infoDialog">
       <button class="dialog-close" id="dialogClose" type="button" aria-label="Закрыть">×</button>
       <p class="eyebrow">ЧТО ПРОИСХОДИТ СО ЗВУКОМ</p>
       <h2>Это не вращалка.</h2>
-      <p>Demucs AI заранее отделил вокал, бас, ударные и остальные инструменты. Плеер находит темп, сильные доли и границы фраз, а каждую дорожку раскладывает на центр и стерео-бока — всего 14 HRTF-источников.</p>
-      <p>Лид-вокал стоит неподвижно перед тобой, бэки качаются по бокам, хэты маятником ходят под бит и раз в 8 тактов облетают голову, малый барабан подпрыгивает вверх, а музыка отъезжает назад на каждой бочке. Низ ниже 140 Гц идёт мимо HRTF, а окраска HRTF браузера измеряется и компенсируется — 3D и 2D звучат одинаково громко и одинаково ярко.</p>
-      <p>Профиль Major V — безопасная модельная настройка, а не индивидуальное измерение именно твоей пары. В приложении Marshall лучше оставить эквалайзер ровным, чтобы коррекция не применялась дважды.</p>
+      <p>Demucs AI отделил вокал, бас, ударные и остальную музыку. Плеер находит темп, сильные доли и фразы, а каждую дорожку раскладывает на центр и стерео-бока: получается 14 HRTF-источников, и каждый двигается по своей хореографии.</p>
+      <p><b>Почему звук теперь снаружи головы.</b> Каждый источник отражается от стен виртуальной комнаты, и каждое отражение приходит со своего настоящего направления (метод мнимых источников, до 3-го порядка). Хвост реверберации собран из 18 направлений вокруг тебя, поэтому он окружает, а не звучит между ушами. Сзади звук темнее, сверху ярче, вплотную у уха он почти исчезает из другого уха: так мозг понимает «где». Громкость сцены сравнивается с оригиналом, поэтому A/B честный.</p>
+      <p><b>Трекинг головы</b> веб-камерой держит сцену на месте, когда ты поворачиваешься. Это главный признак, по которому мозг верит, что звук реально в комнате. Кадры с камеры обрабатываются только на твоём компьютере.</p>
+      <p><b>Клавиши:</b> пробел — пауза · ← → — перемотка · D — 3D/2D · F — погружение · C — центр головы.</p>
+      <p>Профиль Major V — модельная настройка, а не замер именно твоей пары. В приложении Marshall оставь эквалайзер ровным.</p>
       <button id="dialogConfirm" class="primary-action" type="button">ПОНЯТНО</button>
     </dialog>
 
@@ -209,6 +284,6 @@
       <button type="button" id="resumeButton">ПРОДОЛЖИТЬ</button>
     </div>
 
-    <script src="app.js?v=8"></script>
+    <script type="module" src="js/main.js?v=9"></script>
   </body>
 </html>

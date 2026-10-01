@@ -90,6 +90,12 @@ class NearfieldHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def end_headers(self) -> None:
+        # Always revalidate static files so updated JS modules are picked up without a hard reload.
+        if not self.path.startswith("/api/"):
+            self.send_header("Cache-Control", "no-cache")
+        super().end_headers()
+
     def do_GET(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
         if path.startswith("/api/jobs/"):
