@@ -300,3 +300,43 @@ pub async fn account(http: &reqwest::Client, token: &str) -> Result<(String, boo
     let plus = result.pointer("/plus/hasPlus").and_then(Value::as_bool).unwrap_or(false);
     Ok((login, plus))
 }
+
+/// The user's liked tracks, newest first (the order Yandex shows them in).
+pub async fn liked_tracks(http: &reqwest::Client, token: &str) -> Result<Vec<Track>> {
+    let status = get(http, Some(token), "/account/status", &[]).await?;
+    let uid = id_string(status.pointer("/account/uid")).ok_or_else(|| anyhow!("нет номера аккаунта"))?;
+    let likes = get(http, Some(token), &format!("/users/{uid}/likes/tracks"), &[]).await?;
+    let mut refs: Vec<(u8, String)> = likes
+        .pointer("/library/tracks")
+        .and_then(Value::as_array)
+        .map(|list| {
+            list.iter()
+                .filter_map(|t| {
+                    let id = id_string(t.get("id"))?;
+                    let key = match id_string(t.get("albumId")) {
+                        Some(album) => format!("{id}:{album}"),
+                        None => id,
+                    };
+                    Some((0, key))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    refs.dedup();
+    let mut out = Vec::new();
+    for chunk in refs.chunks(100) {
+        let ids = chunk.iter().map(|(_, k)| k.as_str()).collect::<Vec<_>>().join(",");
+        let response = http
+            .post(format!("{API}/tracks"))
+            .header("X-Yandex-Music-Client", CLIENT)
+            .header("Authorization", format!("OAuth {token}"))
+            .form(&[("track-ids", ids)])
+            .send()
+            .await?;
+        let body: Value = response.json().await?;
+        if let Some(list) = body.get("result").and_then(Value::as_array) {
+            out.extend(list.iter().filter_map(|t| parse_track(t, true)));
+        }
+    }
+    Ok(out)
+}

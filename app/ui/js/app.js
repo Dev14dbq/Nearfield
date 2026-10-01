@@ -120,6 +120,19 @@ listen("track-changed", ({ id, track }) => {
   updatePrep();
 });
 listen("prep-progress", () => updatePrep());
+export async function importLikes({ quiet = false } = {}) {
+  if (!quiet) toast("Забираю лайки из Яндекс Музыки…");
+  try {
+    const count = await api.importYandexLikes();
+    library.clear();
+    toast(count ? `Из Яндекса добавлено ${count} треков в избранное. Скачиваю и готовлю в 3D по очереди.` : "В Яндекс Музыке нет лайкнутых треков");
+    if (["favorites", "home"].includes(currentView()?.name)) navigate(currentView().name, currentView().params, { replace: true });
+    updatePrep();
+  } catch (error) {
+    toast(`Не получилось забрать лайки: ${error}`, { error: true });
+  }
+}
+listen("yandex-signed-in", () => importLikes().then(() => api.prefSet("likesImported", true)));
 listen("accounts-changed", () => {
   toast("Аккаунт обновлён");
   if (currentView()?.name === "settings") navigate("settings", {}, { replace: true });
@@ -186,7 +199,13 @@ setInterval(() => {
   renderSidePlaylists();
   navigate("home");
   updatePrep();
+  // Signed in before likes import existed (or on another run): pull them once automatically.
+  const accounts = await api.accounts().catch(() => ({}));
+  if (accounts.yandex?.connected && !(await api.prefGet("likesImported", false))) {
+    await importLikes();
+    api.prefSet("likesImported", true);
+  }
   requestAnimationFrame(frame);
 })();
 
-window.nearfield = { player, navigate, api };
+window.nearfield = { player, navigate, api, importLikes };

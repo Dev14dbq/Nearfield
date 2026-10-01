@@ -197,3 +197,25 @@ mod fixtures {
         std::fs::write(format!("{dir}/lyrics.json"), serde_json::to_string(&lyrics).unwrap()).unwrap();
     }
 }
+
+#[cfg(test)]
+mod likes_live {
+    /// `YA_TOKEN=… cargo test likes_live -- --ignored --nocapture`
+    #[tokio::test]
+    #[ignore]
+    async fn import() {
+        let token = std::env::var("YA_TOKEN").unwrap();
+        let http = reqwest::Client::builder().user_agent("Mozilla/5.0").build().unwrap();
+        let (login, plus) = super::yandex::account(&http, &token).await.unwrap();
+        println!("account ok, plus={plus}, login_len={}", login.len());
+        let tracks = super::yandex::liked_tracks(&http, &token).await.unwrap();
+        println!("liked: {}", tracks.len());
+        for t in tracks.iter().take(3) { println!("  {} — {} {:?}", t.artists[0].name, t.title, t.sources[0].audio); }
+        if let Some(t) = tracks.first() {
+            let url = super::yandex::audio_url(&http, Some(&token), &t.sources[0].id).await;
+            println!("audio url: {}", url.map(|u| u.starts_with("https://")).unwrap_or(false));
+            let lyrics = super::yandex::lyrics(&http, &token, &t.sources[0].id).await;
+            println!("lyrics: {:?}", lyrics.map(|l| l.map(|l| (l.synced, l.text.len()))));
+        }
+    }
+}

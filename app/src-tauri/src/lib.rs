@@ -156,6 +156,11 @@ fn prep_status(state: State<'_, AppState>) -> Res<PrepStatus> {
 }
 
 #[tauri::command]
+async fn install_ai(app: AppHandle) -> Res<()> {
+    prep::install_ai(&app).await.map_err(err)
+}
+
+#[tauri::command]
 fn retry_failed(state: State<'_, AppState>) -> Res<()> {
     with_db(&state, |db| db.retry_errors())?;
     state.notify.notify_one();
@@ -243,6 +248,27 @@ async fn accounts(state: State<'_, AppState>) -> Res<Value> {
     }))
 }
 
+/// Pulls the user's Yandex likes into the favourites; they then download and prepare as usual.
+#[tauri::command]
+async fn import_yandex_likes(app: AppHandle, state: State<'_, AppState>) -> Res<usize> {
+    let token = state.accounts().yandex_token.ok_or("сначала войди в Яндекс Музыку")?;
+    let tracks = providers::yandex::liked_tracks(&state.http, &token).await.map_err(err)?;
+    let count = tracks.len();
+    with_db(&state, |db| {
+        // Oldest first, so the newest like ends up on top of the favourites list.
+        for track in tracks.iter().rev() {
+            db.upsert(track)?;
+            if db.get(&track.id)?.is_some_and(|t| !t.favorite) {
+                db.set_favorite(&track.id, true)?;
+            }
+        }
+        Ok(())
+    })?;
+    state.notify.notify_one();
+    let _ = app.emit("library-imported", count);
+    Ok(count)
+}
+
 /// Opens Yandex's own sign-in page; the token comes back in the redirect and never passes through us otherwise.
 #[tauri::command]
 async fn yandex_login(app: AppHandle) -> Res<()> {
@@ -274,6 +300,7 @@ async fn yandex_login(app: AppHandle) -> Res<()> {
                         }
                         state.notify.notify_one();
                         let _ = handle.emit("accounts-changed", ());
+                        let _ = handle.emit("yandex-signed-in", ());
                         tokio::time::sleep(Duration::from_millis(150)).await;
                         if let Some(window) = handle.get_webview_window("yandex-login") {
                             let _ = window.close();
@@ -358,6 +385,7 @@ pub fn run() {
             set_listening,
             prep_status,
             retry_failed,
+            install_ai,
             playlists,
             playlist_tracks,
             playlist_create,
@@ -369,6 +397,7 @@ pub fn run() {
             track_playlists,
             accounts,
             yandex_login,
+            import_yandex_likes,
             yandex_logout,
             spotify_keys,
             pref_get,

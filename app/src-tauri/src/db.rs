@@ -239,7 +239,7 @@ impl Db {
             "SELECT {TRACK_COLUMNS} FROM tracks
              WHERE state IN {states} AND preview = 0
                AND (favorite = 1 OR id IN (SELECT track_id FROM playlist_tracks))
-             ORDER BY favorite DESC, COALESCE(fav_at, added_at) DESC LIMIT 1"
+             ORDER BY favorite DESC, COALESCE(fav_at, added_at) DESC, state = 'downloaded' DESC LIMIT 1"
         );
         Ok(self.query(&sql, [])?.into_iter().next())
     }
@@ -254,6 +254,16 @@ impl Db {
     pub fn retry_errors(&self) -> Result<()> {
         self.conn.execute(
             "UPDATE tracks SET state = CASE WHEN audio IS NULL THEN 'new' ELSE 'downloaded' END, error = NULL WHERE state = 'error'",
+            [],
+        )?;
+        Ok(())
+    }
+
+    /// Failures that look like the network (not "track unavailable") get another chance.
+    pub fn retry_network_errors(&self) -> Result<()> {
+        self.conn.execute(
+            "UPDATE tracks SET state = CASE WHEN audio IS NULL THEN 'new' ELSE 'downloaded' END, error = NULL
+             WHERE state = 'error' AND (error LIKE '%недоступ%' OR error LIKE '%timed out%' OR error LIKE '%connect%' OR error LIKE '%сервис отдал пустой%')",
             [],
         )?;
         Ok(())

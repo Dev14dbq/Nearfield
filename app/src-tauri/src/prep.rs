@@ -110,13 +110,72 @@ async fn download(app: &AppState, mut track: Track) -> Result<(PathBuf, bool)> {
 
 pub fn python(app: &AppState) -> Option<PathBuf> {
     let configured = app.db.lock().ok().and_then(|db| db.setting("python")).map(PathBuf::from);
-    let candidates = [
-        configured,
-        Some(app.data_dir.join("ai").join("bin").join("python")),
-        // Development build: the project's own environment.
-        Some(PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.venv/bin/python"))),
-    ];
-    candidates.into_iter().flatten().find(|p| p.exists())
+    let mut candidates = vec![configured, Some(app.data_dir.join("ai").join("bin").join("python"))];
+    // Development builds: the project's own environment, also when built from a git worktree inside it.
+    candidates.extend(Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().map(|dir| Some(dir.join(".venv").join("bin").join("python"))));
+    candidates.into_iter().flatten().find(|p| p.exists() && has_demucs(p))
+}
+
+fn has_demucs(python: &Path) -> bool {
+    python.parent().and_then(Path::parent).is_some_and(|env| {
+        std::fs::read_dir(env.join("lib")).into_iter().flatten().flatten().any(|lib| lib.path().join("site-packages").join("demucs").is_dir())
+    })
+}
+
+/// Apps started from Finder get a minimal PATH; Demucs needs ffmpeg from Homebrew.
+fn tool_path() -> String {
+    let current = std::env::var("PATH").unwrap_or_default();
+    format!("/opt/homebrew/bin:/usr/local/bin:{}/.local/bin:{current}", std::env::var("HOME").unwrap_or_default())
+}
+
+fn find_tool(name: &str) -> Option<PathBuf> {
+    tool_path().split(':').map(|dir| Path::new(dir).join(name)).find(|p| p.is_file())
+}
+
+/// Installs Demucs into the app's own folder (about 1 GB, one time).
+pub async fn install_ai(handle: &AppHandle) -> Result<()> {
+    let app = handle.state::<AppState>();
+    let target = app.data_dir.join("ai");
+    let step = |text: &str| { let _ = handle.emit("ai-install", json!({ "text": text })); };
+    let run = |mut command: tokio::process::Command| async move {
+        let output = command.env("PATH", tool_path()).output().await?;
+        if !output.status.success() {
+            let err = String::from_utf8_lossy(&output.stderr);
+            bail!("{}", err.lines().rev().take(3).collect::<Vec<_>>().join(" "));
+        }
+        Ok::<_, anyhow::Error>(())
+    };
+    if find_tool("ffmpeg").is_none() {
+        let brew = find_tool("brew").ok_or_else(|| anyhow!("нужен ffmpeg: установи Homebrew (brew.sh), затем повтори"))?;
+        step("Ставлю ffmpeg…");
+        let mut command = tokio::process::Command::new(brew);
+        command.args(["install", "ffmpeg"]);
+        run(command).await.context("ffmpeg")?;
+    }
+    let packages = ["demucs==4.1.0", "torch==2.14.1", "lameenc"];
+    if let Some(uv) = find_tool("uv") {
+        step("Создаю окружение…");
+        let mut command = tokio::process::Command::new(&uv);
+        command.args(["venv", "--python", "3.12", "--allow-existing"]).arg(&target);
+        run(command).await?;
+        step("Скачиваю Demucs и PyTorch (~1 ГБ)…");
+        let mut command = tokio::process::Command::new(&uv);
+        command.args(["pip", "install", "--python"]).arg(target.join("bin").join("python")).args(packages);
+        run(command).await?;
+    } else {
+        let python3 = find_tool("python3").ok_or_else(|| anyhow!("не найден python3"))?;
+        step("Создаю окружение…");
+        let mut command = tokio::process::Command::new(python3);
+        command.args(["-m", "venv"]).arg(&target);
+        run(command).await?;
+        step("Скачиваю Demucs и PyTorch (~1 ГБ)…");
+        let mut command = tokio::process::Command::new(target.join("bin").join("pip"));
+        command.arg("install").args(packages);
+        run(command).await?;
+    }
+    step("Готово");
+    app.notify.notify_one();
+    Ok(())
 }
 
 async fn separate(app: &AppState, audio: &Path) -> Result<HashMap<String, String>> {
@@ -132,6 +191,7 @@ async fn separate(app: &AppState, audio: &Path) -> Result<HashMap<String, String
         .args(["-m", "demucs", "-n", "htdemucs", "-d", device, "--mp3", "--mp3-bitrate", "192", "--mp3-preset", "4", "-o"])
         .arg(&work)
         .arg(audio)
+        .env("PATH", tool_path())
         .kill_on_drop(true);
     let output = command.output().await.context("не удалось запустить Demucs")?;
     if !output.status.success() {
@@ -216,6 +276,7 @@ async fn separate_track(handle: &AppHandle, item: &LibraryTrack) -> Result<()> {
 
 pub fn spawn_worker(handle: AppHandle) {
     tauri::async_runtime::spawn(async move {
+        let mut idle_rounds = 0u32;
         loop {
             let app = handle.state::<AppState>();
             let can_separate = !app.listening.load(Ordering::Relaxed) && python(&app).is_some();
@@ -229,6 +290,13 @@ pub fn spawn_worker(handle: AppHandle) {
                 }
                 None => {
                     let _ = tokio::time::timeout(Duration::from_secs(30), app.notify.notified()).await;
+                    // Network hiccups are retried every ~10 minutes of idle time.
+                    idle_rounds += 1;
+                    if idle_rounds % 20 == 0 {
+                        if let Ok(db) = app.db.lock() {
+                            let _ = db.retry_network_errors();
+                        }
+                    }
                 }
             }
             let _ = handle.emit("prep-progress", ());

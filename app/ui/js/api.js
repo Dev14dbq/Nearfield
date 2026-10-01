@@ -20,6 +20,7 @@ export const api = {
   saveAnalysis: (id, analysis) => invoke("save_analysis", { id, analysis }),
   setListening: (listening) => invoke("set_listening", { listening }),
   prepStatus: () => invoke("prep_status"),
+  installAi: () => invoke("install_ai"),
   retryFailed: () => invoke("retry_failed"),
   playlists: () => invoke("playlists"),
   playlistTracks: (id) => invoke("playlist_tracks", { id }),
@@ -32,6 +33,7 @@ export const api = {
   trackPlaylists: (id) => invoke("track_playlists", { id }),
   accounts: () => invoke("accounts"),
   yandexLogin: () => invoke("yandex_login"),
+  importYandexLikes: () => invoke("import_yandex_likes"),
   yandexLogout: () => invoke("yandex_logout"),
   spotifyKeys: (id, secret) => invoke("spotify_keys", { id, secret }),
   prefGet: async (key, fallback = null) => {

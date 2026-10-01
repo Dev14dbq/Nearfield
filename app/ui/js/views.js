@@ -1,6 +1,6 @@
 /* Pages: home, search, artist, album, favourites, playlist, mood, settings. */
 
-import { api } from "./api.js";
+import { api, listen } from "./api.js";
 import { buildMoodQueue, MOODS } from "./moods.js";
 import { player } from "./player.js";
 import { library, newPlaylist, playlistsCache, refreshPlaylists, renderTracks, setNavigator, toggleFavorite } from "./tracks.js";
@@ -250,6 +250,13 @@ async function favorites() {
     ${listHeader({ kind: "Коллекция", title: "Избранное", sub: `${tracks.length} ${plural(tracks.length, "трек", "трека", "треков")} · ${fmtTime(total)} · ${ready} готово в 3D`, art: `<div class="cover hero fav-art">${ICON.heart}</div>` })}
     <div id="favTracks"></div></div>`;
   $('[data-act="saveas"]', view)?.remove();
+  api.accounts().then((a) => {
+    if (!a.yandex?.connected || current?.name !== "favorites") return;
+    const btn = document.createElement("button");
+    btn.className = "btn ghost"; btn.innerHTML = `${ICON.plus}<span>Забрать лайки из Яндекса</span>`;
+    btn.addEventListener("click", () => window.nearfield.importLikes());
+    $(".hero-actions", view)?.append(btn);
+  }).catch(() => {});
   renderTracks($("#favTracks"), tracks, { context: { type: "favorites", label: "Избранное" }, empty: "Жми ♥ у любого трека — он появится здесь, скачается и подготовится в 3D." });
   wireListActions(tracks, { type: "favorites", label: "Избранное" }, { title: "Избранное" });
 }
@@ -339,7 +346,7 @@ async function settings() {
   $("#settingsBody").innerHTML = `
     <section class="card">
       <div class="card-head"><span class="src src-yandex big" style="--c:${PROVIDERS.yandex.color}">Я</span><div><b>Яндекс Музыка</b><small>${ya.connected ? `Вход выполнен: ${esc(ya.login)}${ya.plus ? " · Плюс" : " · без Плюса — полные треки недоступны"}` : "Поиск работает и так. Войди, чтобы слушать полные треки и получать тексты."}</small></div>
-      ${ya.connected ? `<button class="btn ghost" id="yaOut">Выйти</button>` : `<button class="btn primary" id="yaIn">Войти</button>`}</div>
+      ${ya.connected ? `<button class="btn ghost" id="yaLikes">Забрать лайки</button><button class="btn ghost" id="yaOut">Выйти</button>` : `<button class="btn primary" id="yaIn">Войти</button>`}</div>
       ${ya.error ? `<div class="note warn">${esc(ya.error)} — войди заново.</div>` : ""}
       <p class="hint">Откроется официальная страница входа Яндекса. Пароль вводится только там — приложение получает лишь токен доступа и хранит его у тебя на компьютере.</p>
     </section>
@@ -354,7 +361,8 @@ async function settings() {
       </details>
     </section>
     <section class="card">
-      <div class="card-head"><span class="ai-dot ${prep?.ai ? "on" : ""}"></span><div><b>3D-подготовка</b><small>${prep ? `${prep.ready} из ${prep.total} треков готовы в 3D${prep.pending ? `, ещё ${prep.pending} в работе` : ""}.` : ""} ${prep?.ai ? "Разделение на стемы идёт, когда музыка на паузе." : "AI-разделение не найдено — треки играют в 3D без разделения на стемы."}</small></div><button class="btn ghost" id="retry">Повторить ошибки</button></div>
+      <div class="card-head"><span class="ai-dot ${prep?.ai ? "on" : ""}"></span><div><b>3D-подготовка</b><small>${prep ? `${prep.ready} из ${prep.total} треков готовы в 3D${prep.pending ? `, ещё ${prep.pending} в работе` : ""}.` : ""} ${prep?.ai ? "Разделение на стемы идёт, когда музыка на паузе." : "AI-разделение не установлено — треки играют в 3D без разделения на стемы."}</small></div>${prep?.ai ? "" : `<button class="btn primary" id="installAi">Установить (~1 ГБ)</button>`}<button class="btn ghost" id="retry">Повторить ошибки</button></div>
+      <p class="hint" id="aiProgress" hidden></p>
     </section>
     <section class="card">
       <div class="card-head"><div><b>Звук</b><small>Для настоящего 3D нужны наушники.</small></div></div>
@@ -363,8 +371,17 @@ async function settings() {
       <label class="switch-row"><span>Автостиль<small>Определять жанр и подбирать сцену для каждого трека</small></span><input type="checkbox" id="setAuto" ${s.autoStyle ? "checked" : ""} /></label>
     </section>`;
   $("#yaIn")?.addEventListener("click", () => api.yandexLogin());
+  $("#yaLikes")?.addEventListener("click", () => window.nearfield.importLikes());
   $("#yaOut")?.addEventListener("click", async () => { await api.yandexLogout(); settings(); });
   $("#spSave").addEventListener("click", async () => { await api.spotifyKeys($("#spId").value, $("#spSecret").value); toast("Spotify сохранён"); settings(); });
+  $("#installAi")?.addEventListener("click", async (e) => {
+    const button = e.currentTarget; button.disabled = true; button.textContent = "Ставлю…";
+    const progress = $("#aiProgress"); progress.hidden = false;
+    const stop = await listen("ai-install", ({ text }) => { progress.textContent = text; });
+    try { await api.installAi(); toast("3D-разделение установлено — начинаю готовить треки"); settings(); }
+    catch (error) { progress.textContent = `Не получилось: ${error}`; button.disabled = false; button.textContent = "Повторить"; }
+    finally { stop(); }
+  });
   $("#retry").addEventListener("click", async () => { await api.retryFailed(); toast("Повторю загрузку и разбор"); });
   $("#setSpatial").addEventListener("change", (e) => player.apply({ spatial: e.target.checked }, { manual: false }));
   $("#setHeadphone").addEventListener("change", (e) => player.apply({ headphone: e.target.checked }, { manual: false }));
