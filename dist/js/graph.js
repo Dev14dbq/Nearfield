@@ -106,6 +106,15 @@ export class SpatialGraph {
     this.chain([this.spatialSum, this.matchGain, this.spatialSwitch, this.outBus]);
     this.ambienceGain.connect(this.outBus);
 
+    // "Reverb" effect: fed by whatever is audible (3D or 2D), returned after the A/B switch so it
+    // works the same in both. 35 ms pre-delay keeps the vocal clear in front of the wash.
+    this.fxSend = this.gain(0);
+    this.fxConvolver = ctx.createConvolver(); this.fxConvolver.normalize = false;
+    this.fxReturn = this.gain(1);
+    const fxPredelay = ctx.createDelay(0.2); fxPredelay.delayTime.value = 0.035;
+    this.spatialSwitch.connect(this.fxSend); this.bypassSwitch.connect(this.fxSend);
+    this.chain([this.fxSend, makeFilter(ctx, "highpass", 220, 0.7), makeFilter(ctx, "lowpass", 8500, 0.7), fxPredelay, this.fxConvolver, this.fxReturn]);
+
     if (meters) {
       // K-weighted loudness meters keep 3D and 2D at the same perceived level for a fair A/B.
       const silent = this.gain(0); silent.connect(ctx.destination);
@@ -124,6 +133,7 @@ export class SpatialGraph {
       tailNodes.push(this.analyser);
     }
     this.chain([...tailNodes, ctx.destination]);
+    this.fxReturn.connect(this.bassShelf);
 
     this.voices = VOICES.map((voice) => ({ ...voice }));
     this.stems = {};
@@ -250,7 +260,12 @@ export class SpatialGraph {
     param.setTargetAtTime(value, this.ctx.currentTime, timeConstant);
   }
 
-  setMix({ spatial, headphone, bass }, timeConstant = 0.03) {
+  setFxBuffer(buffer) {
+    if (buffer && !this.fxConvolver.buffer) this.fxConvolver.buffer = buffer;
+  }
+
+  setMix({ spatial, headphone, bass, fxReverb = false, fxAmount = 0 }, timeConstant = 0.03) {
+    this.setParam(this.fxSend.gain, fxReverb ? fxAmount : 0, timeConstant > 0 ? Math.max(timeConstant, 0.15) : 0);
     this.setParam(this.spatialSwitch.gain, spatial ? 1 : 0, timeConstant);
     this.setParam(this.bypassSwitch.gain, spatial ? 0 : 1, timeConstant);
     this.eqFilters.forEach((filter, i) => this.setParam(filter.gain, headphone ? MARSHALL_EQ[i][3] : 0, timeConstant));

@@ -21,12 +21,13 @@ export async function renderBinaural(engine, { maxSeconds = Infinity, onProgress
   const ambience = s.ambience !== "none" ? await engine.ambienceBuffer(s.ambience) : null;
   const songDuration = Math.min(engine.duration, maxSeconds * rate);
   const playDuration = songDuration / rate;
-  const tail = room.dims ? clamp(Math.max(...room.rt) * 0.8, 0.5, 5) : 0.3;
+  const tail = Math.max(room.dims ? clamp(Math.max(...room.rt) * 0.8, 0.5, 5) : 0.3, s.fxReverb ? 3 : 0);
   const total = playDuration + tail;
   const offline = new OfflineAudioContext(2, Math.ceil(total * sampleRate), sampleRate);
 
   const graph = new SpatialGraph(offline, engine.calibration);
-  graph.setMix({ spatial: true, headphone: s.headphone, bass: s.bass }, 0);
+  graph.setMix({ spatial: true, headphone: s.headphone, bass: s.bass, fxReverb: s.fxReverb, fxAmount: s.fxAmount }, 0);
+  if (s.fxReverb) graph.setFxBuffer(await engine.fxBuffer());
   STEM_NAMES.forEach((stem) => { graph.stems[stem].stemGain.gain.value = engine.stemEnabled[stem] ? 1 : 0; });
   if (roomData) graph.setRoom(roomData, 0);
   if (ambience) {

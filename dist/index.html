@@ -20,7 +20,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=9" />
+    <link rel="stylesheet" href="styles.css?v=10" />
   </head>
   <body>
     <div class="app-shell">
@@ -88,6 +88,26 @@
           </div>
         </section>
 
+        <section class="lyrics" aria-labelledby="lyricsTitle">
+          <div class="section-title">
+            <div>
+              <p class="eyebrow">ТЕКСТ</p>
+              <h2 id="lyricsTitle">Слова трека</h2>
+            </div>
+            <div class="lyrics-actions">
+              <button class="pill" id="karaokeButton" type="button" title="Убрать вокал, оставить музыку">КАРАОКЕ</button>
+              <label class="pill" title="Загрузить свой файл с текстом и таймкодами"><input id="lrcInput" type="file" accept=".lrc,.txt" />.LRC</label>
+              <button class="pill" id="transcribeButton" type="button" title="Распознать слова по вокальной дорожке (Whisper, локально)">РАСПОЗНАТЬ</button>
+            </div>
+          </div>
+          <p class="lyrics-status" id="lyricsStatus">Жду анализ вокала…</p>
+          <div class="lyrics-lines" id="lyricsLines" aria-live="polite">
+            <p class="lyric prev" id="lyricPrev"></p>
+            <p class="lyric current" id="lyricCurrent"></p>
+            <p class="lyric next" id="lyricNext"></p>
+          </div>
+        </section>
+
         <section class="experiences" aria-labelledby="experienceTitle">
           <div class="section-title">
             <div>
@@ -110,6 +130,11 @@
               <span></span>
               <b>3D</b>
             </label>
+          </div>
+
+          <div class="ui-mode" role="group" aria-label="Подробность настроек">
+            <button type="button" data-ui="simple">Просто</button>
+            <button type="button" data-ui="pro">Тонко</button>
           </div>
 
           <div class="scene-card">
@@ -141,18 +166,43 @@
           </div>
 
           <div class="panel-section">
+            <div class="section-head"><span>Стиль трека</span><small id="styleInfo">определяю…</small></div>
+            <div class="chip-grid four" id="styleChips" role="group" aria-label="Стиль музыки"></div>
+          </div>
+
+          <div class="panel-section">
+            <div class="section-head"><span>Эффекты</span><small>каждый работает сам по себе</small></div>
+            <div class="effect-row">
+              <button class="effect" id="slowedButton" type="button" aria-pressed="false">
+                <span><b>Slowed</b><small>медленнее и ниже, как винил</small></span><em>ВЫКЛ</em>
+              </button>
+              <button class="effect" id="reverbButton" type="button" aria-pressed="false">
+                <span><b>Reverb</b><small>длинный объёмный хвост</small></span><em>ВЫКЛ</em>
+              </button>
+            </div>
+            <div class="control-block adv-only">
+              <div class="control-label"><span>Насколько медленнее</span><output id="slowRateValue"></output></div>
+              <input id="slowRate" type="range" min="70" max="95" value="85" aria-label="Скорость в режиме Slowed" />
+            </div>
+            <div class="control-block adv-only">
+              <div class="control-label"><span>Сила Reverb</span><output id="fxAmountValue"></output></div>
+              <input id="fxAmount" type="range" min="10" max="100" value="55" aria-label="Сила эффекта Reverb" />
+            </div>
+          </div>
+
+          <div class="panel-section">
             <div class="section-head"><span>Движение</span><small id="modeHint"></small></div>
-            <div class="chip-grid four" id="modeChips" role="group" aria-label="Режим движения"></div>
-            <div class="chip-line" id="orbitRow" hidden>
+            <div class="chip-grid four adv-only" id="modeChips" role="group" aria-label="Режим движения"></div>
+            <div class="chip-line adv-only" id="orbitRow" hidden>
               <span>Один оборот</span>
               <div class="chip-grid four compact" id="orbitChips" role="group" aria-label="Скорость орбиты"></div>
             </div>
-            <div class="control-block">
+            <div class="control-block adv-only">
               <div class="control-label"><span>Ширина сцены</span><output id="widthValue"></output></div>
               <input id="width" type="range" min="50" max="150" value="110" aria-label="Ширина сцены" />
             </div>
             <div class="control-block">
-              <div class="control-label"><span>Дистанция</span><output id="distanceValue"></output></div>
+              <div class="control-label"><span>Дистанция до музыки</span><output id="distanceValue"></output></div>
               <input id="distance" type="range" min="0" max="100" value="30" aria-label="Дистанция до музыки" />
             </div>
             <div class="control-block">
@@ -164,16 +214,16 @@
           <div class="panel-section">
             <div class="section-head"><span>Комната</span><small id="roomHint"></small></div>
             <div class="chip-grid four" id="roomChips" role="group" aria-label="Акустика комнаты"></div>
-            <div class="control-block">
+            <div class="control-block adv-only">
               <div class="control-label"><span>Отражения</span><output id="roomAmtValue"></output></div>
               <input id="roomAmt" type="range" min="0" max="300" value="110" aria-label="Количество отражений" />
             </div>
           </div>
 
           <div class="panel-section">
-            <div class="section-head"><span>Звук</span><small>скорость меняет и тон</small></div>
-            <div class="chip-grid five" id="rateChips" role="group" aria-label="Скорость"></div>
-            <div class="control-block">
+            <div class="section-head"><span>Звук</span><small class="adv-only">скорость меняет и тон</small></div>
+            <div class="chip-grid five adv-only" id="rateChips" role="group" aria-label="Скорость"></div>
+            <div class="control-block adv-only">
               <div class="control-label"><span>3D-чёткость</span><output id="cueValue"></output></div>
               <input id="cue" type="range" min="0" max="100" value="65" aria-label="Усиление пространственных признаков" />
             </div>
@@ -249,7 +299,7 @@
         </section>
 
         <section class="signal-flow" aria-label="Схема обработки сигнала">
-          <span>DEMUCS AI</span><i></i><span>BEAT MAP</span><i></i><span>CHOREO</span><i></i><span>14× HRTF</span><i></i><span>CUES</span><i></i><span>ER · 8 ZONES</span><i></i><span>BINAURAL TAIL</span><i></i><span>HEAD TRACK</span><i></i><span>MAJOR V EQ</span>
+          <span>DEMUCS AI</span><i></i><span>STYLE</span><i></i><span>BEAT MAP</span><i></i><span>CHOREO</span><i></i><span>14× HRTF</span><i></i><span>CUES</span><i></i><span>ER · 8 ZONES</span><i></i><span>BINAURAL TAIL</span><i></i><span>HEAD TRACK</span><i></i><span>MAJOR V EQ</span>
         </section>
       </main>
     </div>
@@ -261,6 +311,7 @@
         <small id="immersiveMode">ВНУТРИ · СТУДИЯ</small>
       </div>
       <p class="immersive-hint" id="immersiveHint">Закрой глаза.</p>
+      <p class="immersive-lyric" id="immersiveLyric"></p>
       <div class="immersive-bottom">
         <button type="button" id="immersivePlay" class="immersive-button">ПАУЗА</button>
         <button type="button" id="immersiveExit" class="immersive-button">ВЫЙТИ · ESC</button>
@@ -284,6 +335,6 @@
       <button type="button" id="resumeButton">ПРОДОЛЖИТЬ</button>
     </div>
 
-    <script type="module" src="js/main.js?v=9"></script>
+    <script type="module" src="js/main.js?v=10"></script>
   </body>
 </html>

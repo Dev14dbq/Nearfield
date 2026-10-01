@@ -1,6 +1,8 @@
 import { Engine } from "./engine.js";
 import { encodeWav, renderBinaural } from "./exporter.js";
 import { AMBIENCES, DEFAULT_SETTINGS, EXPERIENCES, findRoom, MODES, ORBIT_BARS, RATES, ROOMS, STEM_NAMES, VOICES } from "./presets.js";
+import { lineIndexAt, parseLrc, savedLrc, saveLrc, transcribe } from "./lyrics.js";
+import { classifyStyle, findStyle, STYLES, trackFeatures } from "./style.js";
 import { HeadTracker } from "./tracking.js";
 import { clamp, DEG, formatTime, mod, spherical } from "./util.js";
 import { drawSpectrum, MIDS, StageView } from "./visual.js";
@@ -33,6 +35,10 @@ const els = {
   exportButton: $("#exportButton"), exportFill: $("#exportFill"), exportLabel: $("#exportLabel"),
   immersive: $("#immersive"), immersiveCanvas: $("#immersiveCanvas"), immersiveTitle: $("#immersiveTitle"),
   immersiveMode: $("#immersiveMode"), immersiveHint: $("#immersiveHint"), immersivePlay: $("#immersivePlay"),
+  immersiveLyric: $("#immersiveLyric"), controlPanel: $(".control-panel"),
+  styleChips: $("#styleChips"), styleInfo: $("#styleInfo"), slowedButton: $("#slowedButton"), reverbButton: $("#reverbButton"),
+  lyricsStatus: $("#lyricsStatus"), lyricsLines: $("#lyricsLines"), lyricPrev: $("#lyricPrev"), lyricCurrent: $("#lyricCurrent"),
+  lyricNext: $("#lyricNext"), karaokeButton: $("#karaokeButton"), transcribeButton: $("#transcribeButton"), lrcInput: $("#lrcInput"),
 };
 
 /* ───── settings ───── */
@@ -59,11 +65,13 @@ function saveSettings() {
 
 const settings = loadSettings();
 const statuses = new Map();
-const app = { trackIndex: 0, dragging: null, lastX: 0, lastY: 0, exporting: false, immersive: false };
+const app = { trackIndex: 0, dragging: null, lastX: 0, lastY: 0, exporting: false, immersive: false, detected: null };
+const lyrics = { lines: [], index: -2, track: null, abort: null, wordsKey: "" };
 
 const engine = new Engine(settings, {
   status: (text, busy = false, channel = "main") => setStatus(text, busy, channel),
   changed: () => updatePlaybackUI(),
+  analyzed: (track) => onTrackAnalyzed(track),
 });
 const tracker = new HeadTracker((yaw, pitch) => { engine.head.yaw = yaw; engine.head.pitch = pitch; });
 tracker.invert = settings.trackInvert;
@@ -75,16 +83,17 @@ function setStatus(text, busy = false, channel = "main") {
   updatePlaybackUI();
 }
 
-const SCENE_KEYS = ["mode", "orbitBars", "room", "width", "distance", "motion", "roomAmt", "cue", "bass", "rate", "ambience", "ambienceLevel"];
+// Touching any of these by hand means "my own scene": the experience highlight and auto-style switch off.
+const SCENE_KEYS = ["mode", "orbitBars", "room", "width", "distance", "motion", "roomAmt", "cue", "bass"];
 
 // Single entry point for every settings change: UI, engine and storage stay in sync.
-function applySettings(patch, { transition = false, fromExperience = false } = {}) {
+function applySettings(patch, { transition = false, fromExperience = false, fromStyle = false } = {}) {
   const previous = structuredClone(settings);
   Object.assign(settings, patch);
-  if (!fromExperience && SCENE_KEYS.some((key) => key in patch)) settings.experience = null;
+  if (!fromExperience && !fromStyle && SCENE_KEYS.some((key) => key in patch)) { settings.experience = null; settings.autoStyle = false; settings.style = null; }
   if (transition || (patch.mode && patch.mode !== previous.mode)) engine.transitionFrom(previous, transition ? 2 : 1.4);
   if ("rate" in patch) engine.setRate(settings.rate);
-  if (["spatial", "headphone", "bass"].some((key) => key in patch)) engine.applyMix();
+  if (["spatial", "headphone", "bass", "fxReverb", "fxAmount"].some((key) => key in patch)) engine.applyMix();
   if ("room" in patch || "distance" in patch) scheduleRoom();
   if ("ambience" in patch || "ambienceLevel" in patch) engine.applyAmbience();
   saveSettings();
@@ -107,6 +116,8 @@ const sliders = {
   cue: { toValue: (v) => v / 100, fromValue: (s) => Math.round(s * 100), label: (s) => `${Math.round(s * 100)}%` },
   bass: { toValue: (v) => v / 2, fromValue: (s) => Math.round(s * 2), label: (s) => `+${s.toFixed(1)} dB` },
   ambienceLevel: { toValue: (v) => v / 100, fromValue: (s) => Math.round(s * 100), label: (s) => `${Math.round(s * 100)}%` },
+  slowRate: { toValue: (v) => v / 100, fromValue: (s) => Math.round(s * 100), label: (s) => `${Math.round(s * 100)}% скорости` },
+  fxAmount: { toValue: (v) => v / 100, fromValue: (s) => Math.round(s * 100), label: (s) => `${Math.round(s * 100)}%` },
 };
 
 function chips(container, items, key, { label = (item) => item.label, value = (item) => item.id, title = (item) => item.hint } = {}) {
@@ -130,13 +141,120 @@ function buildControls() {
     </button>`).join("");
   els.experienceGrid.querySelectorAll(".experience").forEach((button) => button.addEventListener("click", () => {
     const exp = EXPERIENCES.find((item) => item.id === button.dataset.experience);
-    applySettings({ ambienceLevel: DEFAULT_SETTINGS.ambienceLevel, ...exp.settings, experience: exp.id }, { transition: true, fromExperience: true });
+    applySettings({ ambienceLevel: DEFAULT_SETTINGS.ambienceLevel, ...exp.settings, experience: exp.id, autoStyle: false, style: null }, { transition: true, fromExperience: true });
     if (!engine.playing) engine.play().catch(showAudioGate);
   }));
   Object.entries(sliders).forEach(([key, slider]) => {
     const input = $(`#${key}`);
-    input.addEventListener("input", () => applySettings({ [key]: slider.toValue(Number(input.value)) }));
+    input.addEventListener("input", () => {
+      const value = slider.toValue(Number(input.value));
+      applySettings(key === "slowRate" && settings.rate < 1 ? { slowRate: value, rate: value } : { [key]: value });
+    });
   });
+  els.styleChips.innerHTML = [{ id: "auto", label: "Авто", hint: "определять стиль каждого трека" }, ...STYLES]
+    .map((style) => `<button type="button" class="chip" data-value="${style.id}" title="${style.hint}">${style.label}</button>`).join("");
+  els.styleChips.querySelectorAll(".chip").forEach((chip) => chip.addEventListener("click", () => chooseStyle(chip.dataset.value)));
+  els.slowedButton.addEventListener("click", () => applySettings({ rate: settings.rate < 1 ? 1 : settings.slowRate }));
+  els.reverbButton.addEventListener("click", () => applySettings({ fxReverb: !settings.fxReverb }));
+  document.querySelectorAll("[data-ui]").forEach((button) => button.addEventListener("click", () => applySettings({ uiMode: button.dataset.ui })));
+}
+
+/* ───── style ───── */
+
+function chooseStyle(id) {
+  if (id === "auto") {
+    applySettings({ autoStyle: true, experience: null }, { fromStyle: true });
+    if (app.detected) applyStyle(app.detected.id);
+    return;
+  }
+  applySettings({ autoStyle: false, experience: null });
+  applyStyle(id);
+}
+
+function applyStyle(id) {
+  const style = findStyle(id);
+  applySettings({ ...style.settings, style: id, experience: null }, { transition: true, fromStyle: true });
+}
+
+function onTrackAnalyzed(track) {
+  if (track !== TRACKS[app.trackIndex]) return;
+  try {
+    const features = trackFeatures(engine.buffers, engine.analysis);
+    app.detected = { ...classifyStyle(features), features };
+  } catch (error) {
+    console.warn("style detection failed", error);
+    app.detected = null;
+  }
+  if (app.detected && settings.autoStyle && !settings.experience) applyStyle(app.detected.id);
+  renderSettings();
+  loadLyrics(track);
+}
+
+/* ───── lyrics ───── */
+
+function setLyricsStatus(text) { els.lyricsStatus.textContent = text; }
+
+function showLines(lines, status) {
+  lyrics.lines = lines; lyrics.index = -2; lyrics.wordsKey = "";
+  els.lyricsLines.classList.toggle("empty", !lines.length);
+  setLyricsStatus(status);
+}
+
+async function loadLyrics(track, { force = false } = {}) {
+  lyrics.abort?.abort();
+  const controller = new AbortController(); lyrics.abort = controller; lyrics.track = track;
+  showLines([], "");
+  const lrc = savedLrc(track);
+  if (lrc && !force) { showLines(parseLrc(lrc), "Текст из твоего .lrc-файла"); return; }
+  if (!app.detected?.vocals && !force) { showLines([], "Инструментал: в треке не слышно вокала, текста нет."); return; }
+  if (!track.stems?.vocals) { showLines([], "У трека нет отдельной вокальной дорожки. Загрузи .lrc, чтобы видеть текст."); return; }
+  if (!settings.autoLyrics && !force) { showLines([], "Вокал есть. Нажми «Распознать», чтобы получить текст."); return; }
+  setLyricsStatus("Вокал найден. Распознаю слова по вокальной дорожке…");
+  try {
+    const result = await transcribe(track.stems.vocals, (text) => setStatus(text, true, "lyrics"), controller.signal);
+    if (lyrics.track !== track) return;
+    showLines(result.lines, result.lines.length
+      ? `Распознано локально (Whisper${result.language ? `, язык: ${result.language}` : ""}). На пении возможны ошибки.`
+      : "Вокал есть, но разборчивых слов не нашлось.");
+  } catch (error) {
+    if (error.name === "AbortError" || lyrics.track !== track) return;
+    const hint = error.code === "missing"
+      ? "Для распознавания установи Whisper: .venv/bin/pip install faster-whisper. Или загрузи .lrc."
+      : error.code === "offline"
+        ? "Распознавание работает, когда плеер запущен через python3 server.py. Или загрузи .lrc."
+        : `Не получилось распознать: ${error.message}`;
+    showLines([], hint);
+  } finally {
+    if (lyrics.abort === controller) setStatus(null, false, "lyrics");
+  }
+}
+
+function escapeHtml(text) {
+  return text.replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char]);
+}
+
+function updateLyrics(time) {
+  const lines = lyrics.lines;
+  if (!lines.length) { if (els.immersiveLyric.textContent) els.immersiveLyric.textContent = ""; return; }
+  let index = lineIndexAt(lines, time);
+  if (index >= 0 && time > lines[index].end + 1.5 && lines[index + 1]?.time > time + 1) index = -1;
+  const current = lines[index];
+  if (index !== lyrics.index) {
+    lyrics.index = index;
+    els.lyricPrev.textContent = lines[index - 1]?.text ?? "";
+    els.lyricNext.textContent = lines[index + 1]?.text ?? (index < 0 ? lines[0].text : "");
+    if (current?.words?.length) {
+      els.lyricCurrent.innerHTML = current.words.map((word, i) => `<span class="w" data-i="${i}">${escapeHtml(word.word)}</span>`).join("");
+    } else els.lyricCurrent.textContent = current?.text ?? "♪";
+    els.immersiveLyric.textContent = current?.text ?? "";
+  }
+  if (current?.words?.length) {
+    els.lyricCurrent.querySelectorAll(".w").forEach((span, i) => {
+      const word = current.words[i];
+      span.classList.toggle("sung", time >= word.end);
+      span.classList.toggle("now", time >= word.start && time < word.end);
+    });
+  }
 }
 
 function setActive(container, value) {
@@ -166,6 +284,22 @@ function renderSettings() {
     updateRange(input);
   });
   els.experienceGrid.querySelectorAll(".experience").forEach((button) => button.classList.toggle("active", button.dataset.experience === settings.experience));
+  els.controlPanel.classList.toggle("simple", settings.uiMode !== "pro");
+  document.querySelectorAll("[data-ui]").forEach((button) => button.classList.toggle("active", button.dataset.ui === (settings.uiMode === "pro" ? "pro" : "simple")));
+  const styleChip = settings.autoStyle ? "auto" : settings.style;
+  els.styleChips.querySelectorAll(".chip").forEach((chip) => {
+    chip.classList.toggle("active", chip.dataset.value === styleChip);
+    chip.classList.toggle("detected", Boolean(app.detected) && chip.dataset.value === app.detected.id && chip.dataset.value !== styleChip);
+  });
+  const detected = app.detected;
+  els.styleInfo.textContent = detected
+    ? `похоже на «${findStyle(detected.id).label}» · ${Math.round(detected.confidence * 100)}% · ${detected.vocals ? "есть вокал" : "без вокала"}`
+    : "определяю…";
+  const slowed = settings.rate < 1;
+  els.slowedButton.classList.toggle("active", slowed); els.slowedButton.setAttribute("aria-pressed", String(slowed));
+  els.slowedButton.querySelector("em").textContent = slowed ? `${Math.round(settings.rate * 100)}%` : "ВЫКЛ";
+  els.reverbButton.classList.toggle("active", settings.fxReverb); els.reverbButton.setAttribute("aria-pressed", String(settings.fxReverb));
+  els.reverbButton.querySelector("em").textContent = settings.fxReverb ? "ВКЛ" : "ВЫКЛ";
   els.spatialToggle.checked = settings.spatial; els.headphoneToggle.checked = settings.headphone;
   els.modeBadge.textContent = mode.label.toUpperCase(); els.roomBadge.textContent = room.label.toUpperCase();
   els.rateBadge.textContent = RATES.find((rate) => rate.value === settings.rate)?.label || `${settings.rate}×`;
@@ -210,6 +344,11 @@ function selectTrack(index, autoplay = false) {
     chip.setAttribute("aria-pressed", String(available));
   });
   renderTracks();
+  app.detected = null; lyrics.abort?.abort(); lyrics.track = track;
+  showLines([], "Жду анализ вокала…");
+  els.karaokeButton.classList.remove("active");
+  els.karaokeButton.disabled = !track.stems; els.transcribeButton.disabled = !track.stems;
+  renderSettings();
   if (autoplay || wasPlaying) engine.play().catch(showAudioGate);
 }
 
@@ -414,6 +553,7 @@ function frame() {
   if (!els.seek.matches(":active") && duration) { els.seek.value = Math.round(current / duration * 1000); updateRange(els.seek); }
   checkTrackEnd();
   updateStemMeters();
+  updateLyrics(current);
   if (tracker.source === "camera") els.cameraState.textContent = tracker.faceVisible ? "ЛИЦО ✓" : "НЕТ ЛИЦА";
   requestAnimationFrame(frame);
 }
@@ -429,10 +569,24 @@ els.nextButton.addEventListener("click", () => selectTrack(app.trackIndex + 1, t
 document.querySelectorAll(".stem-chip").forEach((chip) => chip.addEventListener("click", () => {
   const stem = chip.dataset.stem; const enabled = !chip.classList.contains("active");
   chip.classList.toggle("active", enabled); chip.setAttribute("aria-pressed", String(enabled)); engine.setStemEnabled(stem, enabled);
+  if (stem === "vocals") els.karaokeButton.classList.toggle("active", !enabled);
 }));
 document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => applySettings({ view: button.dataset.view })));
 els.spatialToggle.addEventListener("change", () => applySettings({ spatial: els.spatialToggle.checked }));
 els.headphoneToggle.addEventListener("change", () => applySettings({ headphone: els.headphoneToggle.checked }));
+els.karaokeButton.addEventListener("click", () => {
+  const chip = document.querySelector('.stem-chip[data-stem="vocals"]');
+  if (!chip.disabled) chip.click();
+});
+els.transcribeButton.addEventListener("click", () => loadLyrics(TRACKS[app.trackIndex], { force: true }));
+els.lrcInput.addEventListener("change", async () => {
+  const file = els.lrcInput.files?.[0]; if (!file) return;
+  const text = await file.text();
+  const lines = parseLrc(text);
+  if (!lines.length) showNotice("В файле нет строк с таймкодами вида [мм:сс.xx]");
+  else { const track = TRACKS[app.trackIndex]; saveLrc(track, text); lyrics.abort?.abort(); lyrics.track = track; showLines(lines, `Текст из файла ${file.name}`); }
+  els.lrcInput.value = "";
+});
 els.cameraButton.addEventListener("click", toggleCamera);
 els.gyroButton.addEventListener("click", toggleGyro);
 els.recenterButton.addEventListener("click", () => tracker.recenter());
@@ -522,4 +676,4 @@ updateTrackingUI();
 requestAnimationFrame(frame);
 
 // Debug / automation handle.
-window.nearfield = { engine, settings, applySettings, tracker, stage, renderBinaural, encodeWav, TRACKS };
+window.nearfield = { engine, settings, applySettings, tracker, stage, renderBinaural, encodeWav, TRACKS, app, lyrics };

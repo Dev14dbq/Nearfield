@@ -4,7 +4,7 @@ import { blendFrames, choreograph } from "./choreography.js";
 import { computeParams, PARAM_COUNT, SpatialGraph } from "./graph.js";
 import { calibrate, measureGrid } from "./hrtf.js";
 import { findRoom, STEM_NAMES, VOICES } from "./presets.js";
-import { RoomLibrary } from "./rooms.js";
+import { renderFxReverb, RoomLibrary } from "./rooms.js";
 import { clamp, easeInOut } from "./util.js";
 
 const MOTION_STEP = 0.02;
@@ -12,7 +12,7 @@ const MOTION_STEP = 0.02;
 export class Engine {
   constructor(settings, hooks = {}) {
     this.settings = settings;
-    this.hooks = { status: () => {}, changed: () => {}, ...hooks };
+    this.hooks = { status: () => {}, changed: () => {}, analyzed: () => {}, ...hooks };
     this.context = null;
     this.graph = null;
     this.buffers = {};
@@ -76,7 +76,8 @@ export class Engine {
   applyMix(immediate = false) {
     if (!this.graph) return;
     const s = this.settings;
-    this.graph.setMix({ spatial: s.spatial, headphone: s.headphone, bass: s.bass }, immediate ? 0.001 : 0.03);
+    this.graph.setMix({ spatial: s.spatial, headphone: s.headphone, bass: s.bass, fxReverb: s.fxReverb, fxAmount: s.fxAmount }, immediate ? 0.001 : 0.03);
+    if (s.fxReverb) this.fxBuffer().then((buffer) => this.graph.setFxBuffer(buffer));
     this.updateAmbienceLevel();
   }
 
@@ -117,6 +118,11 @@ export class Engine {
       clearTimeout(slow);
       if (token === this.roomToken) this.hooks.status(null, false, "room");
     }
+  }
+
+  fxBuffer() {
+    this.fxPromise ??= renderFxReverb(this.context.sampleRate);
+    return this.fxPromise;
   }
 
   ambienceBuffer(id) {
@@ -188,6 +194,7 @@ export class Engine {
       if (token !== this.loadToken) return false;
       this.analysis = analysis;
       this.hooks.status(null);
+      this.hooks.analyzed(track);
       this.hooks.changed();
       return true;
     })();

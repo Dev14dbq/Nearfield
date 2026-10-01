@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import cgi
+import hashlib
 import json
 import re
 import shutil
@@ -23,6 +24,7 @@ PYTHON = ROOT / ".venv" / "bin" / "python"
 JOBS: dict[str, dict] = {}
 JOBS_LOCK = threading.Lock()
 MODEL_LOCK = threading.Semaphore(1)
+LYRICS_LOCK = threading.Semaphore(1)
 
 
 def update_job(job_id: str, **values) -> None:
@@ -78,6 +80,27 @@ def separate(job_id: str, source: Path, title: str) -> None:
         update_job(job_id, state="error", message=str(error))
 
 
+def lyrics_cache(source: Path) -> Path:
+    stat = source.stat()
+    key = hashlib.sha1(f"{source.relative_to(DIST)}|{stat.st_size}|{int(stat.st_mtime)}".encode()).hexdigest()[:16]
+    return RUNTIME / "lyrics" / f"{key}.json"
+
+
+def transcribe(job_id: str, source: Path, target: Path) -> None:
+    try:
+        update_job(job_id, state="processing", message="Whisper распознаёт текст")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with LYRICS_LOCK:
+            process = subprocess.run([str(PYTHON), str(ROOT / "lyrics_worker.py"), str(source), str(target)], cwd=ROOT, capture_output=True, text=True)
+        if process.returncode == 3:
+            raise RuntimeError("Распознавание не установлено: .venv/bin/pip install faster-whisper")
+        if process.returncode:
+            raise RuntimeError(process.stderr.strip()[-800:] or "Whisper завершился с ошибкой")
+        update_job(job_id, state="done", message="Готово", lyrics=json.loads(target.read_text(encoding="utf-8")))
+    except Exception as error:  # the message is returned only to localhost
+        update_job(job_id, state="error", message=str(error))
+
+
 class NearfieldHandler(SimpleHTTPRequestHandler):
     server_version = "Nearfield/1.0"
 
@@ -107,7 +130,35 @@ class NearfieldHandler(SimpleHTTPRequestHandler):
             return
         super().do_GET()
 
+    def start_lyrics(self) -> None:
+        length = int(self.headers.get("Content-Length", "0"))
+        try:
+            payload = json.loads(self.rfile.read(min(length, 4096)) or b"{}")
+            source = (DIST / str(payload.get("path", ""))).resolve()
+            source.relative_to(DIST.resolve())
+        except (ValueError, json.JSONDecodeError):
+            self.send_json({"error": "Неверный путь"}, 400)
+            return
+        if not source.is_file():
+            self.send_json({"error": "Вокальная дорожка не найдена"}, 404)
+            return
+        cached = lyrics_cache(source)
+        if cached.exists():
+            self.send_json({"state": "done", "lyrics": json.loads(cached.read_text(encoding="utf-8"))})
+            return
+        if not PYTHON.exists():
+            self.send_json({"error": "AI-окружение не установлено (.venv)"}, 503)
+            return
+        job_id = uuid.uuid4().hex[:12]
+        with JOBS_LOCK:
+            JOBS[job_id] = {"state": "queued", "message": "Текст в очереди"}
+        threading.Thread(target=transcribe, args=(job_id, source, cached), daemon=True).start()
+        self.send_json({"jobId": job_id}, 202)
+
     def do_POST(self) -> None:  # noqa: N802
+        if urlparse(self.path).path == "/api/lyrics":
+            self.start_lyrics()
+            return
         if urlparse(self.path).path != "/api/separate":
             self.send_json({"error": "Not found"}, 404)
             return

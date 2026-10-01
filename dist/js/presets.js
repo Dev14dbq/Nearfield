@@ -114,8 +114,17 @@ export const DEFAULT_SETTINGS = {
   cue: 0.65,
   bass: 1,
   rate: 1,
+  // Effects, independent of the scene: Slowed (turntable speed) and Reverb (lush tail).
+  slowRate: 0.85,
+  fxReverb: false,
+  fxAmount: 0.55,
   ambience: "none",
   ambienceLevel: 0.5,
+  // Automatic style detection picks the scene for every new track until a scene is chosen by hand.
+  autoStyle: true,
+  style: null,
+  autoLyrics: true,
+  uiMode: "simple",
   spatial: true,
   headphone: true,
   view: "3d",
@@ -134,35 +143,35 @@ export const DEFAULT_SETTINGS = {
 export const EXPERIENCES = [
   {
     id: "tiktok", title: "8D", sub: "трек летает вокруг головы",
-    settings: { mode: "orbit", orbitBars: 4, room: "hall", width: 1, distance: 1.7, motion: 0.55, roomAmt: 2.2, cue: 0.75, bass: 2, rate: 1, ambience: "none" },
+    settings: { mode: "orbit", orbitBars: 4, room: "hall", width: 1, distance: 1.7, motion: 0.55, roomAmt: 2.2, cue: 0.75, bass: 2, ambience: "none" },
   },
   {
     id: "concert", title: "Концерт", sub: "ты в зале, группа на сцене",
-    settings: { mode: "stage", room: "hall", width: 1.15, distance: 7, motion: 0.3, roomAmt: 1, cue: 0.55, bass: 3, rate: 1, ambience: "none" },
+    settings: { mode: "stage", room: "hall", width: 1.15, distance: 7, motion: 0.3, roomAmt: 1, cue: 0.55, bass: 3, ambience: "none" },
   },
   {
     id: "inside", title: "Внутри трека", sub: "инструменты вокруг тебя",
-    settings: { mode: "inside", room: "studio", width: 1.1, distance: 1.6, motion: 0.45, roomAmt: 1.1, cue: 0.65, bass: 1, rate: 1, ambience: "none" },
+    settings: { mode: "inside", room: "studio", width: 1.1, distance: 1.6, motion: 0.45, roomAmt: 1.1, cue: 0.65, bass: 1, ambience: "none" },
   },
   {
     id: "dance", title: "Танцпол", sub: "всё двигается под бит",
-    settings: { mode: "pulse", room: "club", width: 1.1, distance: 1.7, motion: 0.8, roomAmt: 0.9, cue: 0.65, bass: 5, rate: 1, ambience: "none" },
+    settings: { mode: "pulse", room: "club", width: 1.1, distance: 1.7, motion: 0.8, roomAmt: 0.9, cue: 0.65, bass: 5, ambience: "none" },
   },
   {
     id: "slowed", title: "Slowed + Reverb", sub: "медленно, глубоко, ночью",
-    settings: { mode: "orbit", orbitBars: 8, room: "cathedral", width: 1.2, distance: 2.4, motion: 0.4, roomAmt: 1.6, cue: 0.6, bass: 4, rate: 0.85, ambience: "none" },
+    settings: { mode: "orbit", orbitBars: 8, room: "cathedral", width: 1.2, distance: 2.4, motion: 0.4, roomAmt: 1.6, cue: 0.6, bass: 4, ambience: "none", rate: 0.85, slowRate: 0.85, fxReverb: true },
   },
   {
     id: "rain", title: "Дождь за окном", sub: "тёплая комната, ливень",
-    settings: { mode: "inside", room: "studio", width: 1, distance: 2, motion: 0.3, roomAmt: 1.2, cue: 0.6, bass: 2, rate: 1, ambience: "rain", ambienceLevel: 0.55 },
+    settings: { mode: "inside", room: "studio", width: 1, distance: 2, motion: 0.3, roomAmt: 1.2, cue: 0.6, bass: 2, ambience: "rain", ambienceLevel: 0.55 },
   },
   {
     id: "space", title: "Невесомость", sub: "плывёшь в пустоте",
-    settings: { mode: "dream", room: "cathedral", width: 1.3, distance: 3, motion: 0.6, roomAmt: 1.3, cue: 0.7, bass: 3, rate: 0.92, ambience: "none" },
+    settings: { mode: "dream", room: "cathedral", width: 1.3, distance: 3, motion: 0.6, roomAmt: 1.3, cue: 0.7, bass: 3, ambience: "none" },
   },
   {
     id: "studio", title: "Студия", sub: "как у звукорежиссёра",
-    settings: { mode: "stage", room: "studio", width: 1, distance: 1.8, motion: 0.12, roomAmt: 1, cue: 0.5, bass: 0, rate: 1, ambience: "none" },
+    settings: { mode: "stage", room: "studio", width: 1, distance: 1.8, motion: 0.12, roomAmt: 1, cue: 0.5, bass: 0, ambience: "none" },
   },
 ];
 

@@ -123,10 +123,10 @@ function tailNoise(length, sampleRate, room, seed, targetEnergy) {
   return out;
 }
 
-export async function renderLateTail(room, sampleRate) {
+export async function renderLateTail(room, sampleRate, targetEnergy = null) {
   const length = Math.ceil((room.tMix + Math.max(...room.rt) * 1.1) * sampleRate);
   const directions = fibonacciSphere(18, -35, 80);
-  const total = room.tailScale / criticalDistance(room) ** 2;
+  const total = targetEnergy ?? room.tailScale / criticalDistance(room) ** 2;
   const sources = directions.map((_, i) => tailNoise(length, sampleRate, room, 31337 + i * 101, total / directions.length));
   return renderOffline(2, length + 1024, sampleRate, (offline) => {
     directions.forEach((vector, i) => {
@@ -139,6 +139,13 @@ export async function renderLateTail(room, sampleRate) {
       source.connect(panner); panner.connect(offline.destination); source.start();
     });
   }, (buffer) => energy(buffer.getChannelData(0), 0, Math.min(buffer.length, sampleRate)) > total * 1e-4);
+}
+
+// The "Reverb" effect: a lush, slightly dark binaural plate-like tail independent of the room.
+export const FX_REVERB = { id: "fx", rt: [3.4, 2.9, 2.1], tMix: 0.03 };
+
+export function renderFxReverb(sampleRate) {
+  return renderLateTail(FX_REVERB, sampleRate, 3);
 }
 
 // Cache: the tail depends only on the room, early reflections also on the source distance.
