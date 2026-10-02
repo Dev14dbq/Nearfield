@@ -16,7 +16,7 @@ export const MOODS = [
     tempo: [112, 175], drive: 1, styles: { electronic: 1, rap: 0.8, rock: 0.9, pop: 0.6 },
     genres: ["dance", "electronics", "rock", "rap", "rusrap", "pop", "edm", "house", "metal", "punk"],
     search: ["workout", "energy hits", "бодрая музыка"],
-    scene: { mode: "pulse", room: "club", width: 1.15, distance: 1.7, motion: 0.7, roomAmt: 0.8, cue: 0.7, bass: 5, ambience: "none", rate: 1, fxReverb: false },
+    scene: { mode: "pulse", room: "studio", width: 1.15, distance: 1.6, motion: 0.7, roomAmt: 0.6, cue: 0.7, bass: 5, ambience: "none", rate: 1, fxReverb: false },
   },
   {
     id: "chill", label: "Чилл", sub: "никуда не спешить",
@@ -48,7 +48,7 @@ export const MOODS = [
     tempo: [118, 135], drive: 1, styles: { electronic: 1, pop: 0.8, rap: 0.7 },
     genres: ["dance", "electronics", "house", "pop", "edm", "techno", "disco"],
     search: ["party hits", "dance hits", "клубные хиты"],
-    scene: { mode: "pulse", room: "club", width: 1.1, distance: 1.7, motion: 0.85, roomAmt: 0.9, cue: 0.65, bass: 6, ambience: "none", rate: 1, fxReverb: false },
+    scene: { mode: "pulse", room: "club", width: 1.1, distance: 1.6, motion: 0.85, roomAmt: 0.55, cue: 0.65, bass: 6, ambience: "none", rate: 1, fxReverb: false },
   },
   {
     id: "night", label: "Ночь", sub: "темно и тихо",
@@ -72,7 +72,7 @@ export const MOODS = [
     tempo: [95, 140], drive: 0.8, styles: { rock: 1, electronic: 0.8, pop: 0.7, rap: 0.6 },
     genres: ["rock", "alternative", "indie", "synthwave", "pop", "electronics", "rusrock"],
     search: ["road trip songs", "driving music", "музыка в дорогу"],
-    scene: { mode: "stage", room: "club", width: 1.25, distance: 3, motion: 0.3, roomAmt: 0.9, cue: 0.6, bass: 4, ambience: "none", rate: 1, fxReverb: false },
+    scene: { mode: "stage", room: "studio", width: 1.2, distance: 2, motion: 0.3, roomAmt: 0.7, cue: 0.6, bass: 4, ambience: "none", rate: 1, fxReverb: false },
   },
 ];
 

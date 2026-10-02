@@ -30,5 +30,5 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 
 [profile.release]
 codegen-units = 1
-lto = "off"
+lto = "thin"
 opt-level = "s"

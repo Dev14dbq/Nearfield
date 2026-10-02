@@ -385,6 +385,7 @@ async function settings({ focus } = {}) {
     <section class="card">
       <label class="switch-row first"><span>3D-звук</span><input type="checkbox" id="setSpatial" ${s.spatial ? "checked" : ""} /></label>
       <label class="switch-row"><span>Наушники<small>Выключи для колонок</small></span><input type="checkbox" id="setHeadphone" ${s.headphone ? "checked" : ""} /></label>
+      <div class="switch-row"><span>3D-движок<small>${engineState()}</small></span></div>
     </section>
     <section class="card" id="eqCard">
       <div class="card-head"><div><b>Эквалайзер</b></div><button class="switch ${player.eq.some((g) => g) ? "on" : ""}" id="eqOn" aria-label="Эквалайзер"></button></div>
@@ -437,6 +438,13 @@ function paintEq(input) {
   const v = Number(input.value); const mid = 50; const at = 50 + (v / 12) * 50;
   const [a, b] = at >= mid ? [mid, at] : [at, mid];
   input.style.background = `linear-gradient(90deg, rgba(255,255,255,.16) ${a}%, var(--accent) ${a}%, var(--accent) ${b}%, rgba(255,255,255,.16) ${b}%)`;
+}
+
+function engineState() {
+  const e = player.engine;
+  if (!e.grid) return "запустится с первым треком";
+  const measured = e.grid.measured && e.calibration?.eq?.length;
+  return `${measured ? "точная модель головы" : "упрощённая модель — звук может быть глуше"} · ${e.context?.sampleRate / 1000} кГц`;
 }
 
 const fmtDb = (g) => (g > 0 ? `+${g}` : `${g}`);

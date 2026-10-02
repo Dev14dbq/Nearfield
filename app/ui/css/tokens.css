@@ -1,0 +1,51 @@
+:root {
+  color-scheme: dark;
+  --bg: #08090b;
+  --bg-2: #0e1013;
+  --panel: rgba(255, 255, 255, 0.035);
+  --panel-2: rgba(255, 255, 255, 0.06);
+  --panel-3: rgba(255, 255, 255, 0.09);
+  --line: rgba(255, 255, 255, 0.08);
+  --line-2: rgba(255, 255, 255, 0.14);
+  --ink: #f2f4ee;
+  --ink-2: #b9bdb6;
+  --muted: #80857f;
+  --faint: #545953;
+  --accent: #dfff4f;
+  --accent-ink: #11140a;
+  --accent-soft: rgba(223, 255, 79, 0.14);
+  --cyan: #67e8f9;
+  --danger: #ff6b6b;
+  --warn: #ffc857;
+  --radius: 14px;
+  --sidebar: 248px;
+  --bar: 84px;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink); }
+body { user-select: none; -webkit-user-select: none; cursor: default; }
+button, input { font: inherit; color: inherit; }
+button { background: none; border: 0; padding: 0; cursor: pointer; }
+input::placeholder { color: var(--faint); }
+svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+svg.fill { fill: currentColor; stroke: none; }
+img { display: block; }
+h1, h2, h3, p { margin: 0; }
+[hidden] { display: none !important; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 10px; border: 3px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: rgba(255, 255, 255, 0.2); }
+::-webkit-scrollbar-track { background: transparent; }
+button.chip:hover, a.chip:hover { background: var(--panel-3); color: var(--ink); }
+body.no-track .shell { grid-template-rows: 1fr 0; }
+body.no-track .playerbar { opacity: 0; pointer-events: none; }
+body.no-track .toast-zone { bottom: 24px; }
+body.np-open .toast-zone { bottom: 24px; }
+img.wave-ico { border-radius: 12px; }
+/* Clicks on an icon must land on its button (WebKit otherwise targets the SVG and misses). */
+button svg, button img, button i, .icon-btn > *, .switch::after { pointer-events: none; }
+body.np-open .np-close { opacity: 1; }
+body.no-track .playerbar { transform: translateY(20px); }

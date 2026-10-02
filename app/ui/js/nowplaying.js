@@ -4,7 +4,7 @@ import { api } from "./api.js";
 import { lineIndexAt, parseLrc } from "../engine/lyrics.js";
 import { AMBIENCES, findRoom, MODES, ROOMS } from "../engine/presets.js";
 import { player } from "./player.js";
-import { ROOM_FIT, SCENE_PRESETS, SPEEDS, STYLE_SCENES } from "./scenes.js";
+import { ROOM_FIT, SCENE_PRESETS, SPEEDS } from "./scenes.js";
 import { library, newPlaylist, playlistsCache, refreshPlaylists, toggleFavorite } from "./tracks.js";
 import { $, $$, artistNames, cover, coverTone, esc, fmtTime, ICON, openMenu, toast } from "./ui.js";
 
@@ -404,4 +404,3 @@ export function drawFrame(now) {
   els.cover.style.transform = `scale(${1 + engine.kick * 0.012})`;
 }
 
-export { STYLE_SCENES };

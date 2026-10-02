@@ -1,6 +1,9 @@
 .DS_Store
+.venv/
 __pycache__/
 *.pyc
-.venv/
-.runtime/
-dist/assets/generated/
+# Local test tracks and their stems (never committed)
+dev-samples/
+# Build output
+app/src-tauri/target/
+app/src-tauri/gen/
