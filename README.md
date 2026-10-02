@@ -88,3 +88,13 @@ dist/
   js/visual.js       3D-сцена и спектр
 server.py            локальный сервер: Demucs (стемы) API
 ```
+
+## Приложение для Mac
+
+Исходники лежат в `app/`. Собрать и установить в «Программы»:
+
+```bash
+./app/build-mac.sh
+```
+
+После этого Nearfield открывается из Launchpad или Spotlight. Библиотека и вход в сервисы хранятся в `~/Library/Application Support/app.nearfield.player` и при обновлении сохраняются.
