@@ -1,4 +1,5 @@
 mod db;
+mod media;
 mod merge;
 mod model;
 mod prep;
@@ -157,6 +158,12 @@ async fn prepare_play(app: AppHandle, track: Track) -> Res<LibraryTrack> {
 #[tauri::command]
 fn save_analysis(state: State<'_, AppState>, id: String, analysis: Value) -> Res<()> {
     with_db(&state, |db| db.set_analysis(&id, &analysis))
+}
+
+/// Pushes what is playing to the system (Now Playing, media keys, lock screen).
+#[tauri::command]
+fn media_update(media: State<'_, media::Media>, info: media::Info) {
+    media.update(&info);
 }
 
 #[tauri::command]
@@ -411,6 +418,7 @@ pub fn run() {
                 locks: tokio::sync::Mutex::new(HashMap::new()),
                 colors: tokio::sync::Mutex::new(HashMap::new()),
             });
+            app.manage(media::Media::start(app.handle()));
             prep::spawn_worker(app.handle().clone());
             Ok(())
         })
@@ -428,6 +436,7 @@ pub fn run() {
             prepare_play,
             save_analysis,
             set_listening,
+            media_update,
             prep_status,
             retry_failed,
             install_ai,

@@ -178,6 +178,35 @@ async function analyzeIdle() {
 }
 setInterval(analyzeIdle, 15000);
 
+/* ───── system media: Now Playing, media keys, headphone buttons ───── */
+
+function pushMedia() {
+  const track = player.track;
+  api.mediaUpdate({
+    track: track ? { title: track.title, artist: artistNames(track), album: track.album || null, cover: track.cover || null, duration: player.engine.duration || track.duration || 0 } : null,
+    playing: player.playing,
+    position: Math.floor(player.engine.currentTime),
+  });
+}
+player.on("track", pushMedia);
+player.on("state", pushMedia);
+// The OS extrapolates the position itself; a refresh every few seconds only corrects drift.
+setInterval(() => { if (player.playing) pushMedia(); }, 5000);
+
+listen("media-key", ({ action, seconds }) => {
+  const engine = player.engine;
+  switch (action) {
+    case "play": if (!player.playing) player.toggle(); break;
+    case "pause": if (player.playing) player.toggle(); break;
+    case "toggle": player.toggle(); break;
+    case "next": player.next(); break;
+    case "previous": player.prev(); break;
+    case "seekBy": engine.seek(engine.currentTime + seconds); pushMedia(); break;
+    case "seekTo": engine.seek(seconds); pushMedia(); break;
+    default: break;
+  }
+});
+
 /* ───── frame loop ───── */
 
 let lastSave = 0;

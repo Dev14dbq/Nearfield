@@ -18,6 +18,7 @@ export const api = {
   setFavorite: (track, favorite) => invoke("set_favorite", { track: plain(track), favorite }),
   preparePlay: (track) => invoke("prepare_play", { track: plain(track) }),
   saveAnalysis: (id, analysis) => invoke("save_analysis", { id, analysis }),
+  mediaUpdate: (info) => invoke("media_update", { info }).catch(() => {}),
   setListening: (listening) => invoke("set_listening", { listening }),
   prepStatus: () => invoke("prep_status"),
   installAi: () => invoke("install_ai"),
